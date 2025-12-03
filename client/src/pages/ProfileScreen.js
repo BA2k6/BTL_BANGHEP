@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { User, Phone, Mail, MapPin, Calendar, Briefcase, Shield, Key, Camera, Save, X, LogOut, Edit3, Building, Loader } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Calendar, Briefcase, Shield, Key, X, LogOut, Edit3, Building, Loader, Save } from 'lucide-react';
+// Giả định đường dẫn api đúng, hãy kiểm tra lại file services/api.js của bạn
 import { getProfile, updateProfile } from '../services/api'; 
 import NenLogin from '../assets/nen.png'; 
 
-export const ProfileScreen = ({ setPath, handleLogout }) => {
+// SAI (Sẽ không chạy được):
+// export const ProfileScreen = ({ setPath, handleLogout }) => { 
+
+// ĐÚNG (Phải có onRefreshUser):
+export const ProfileScreen = ({ setPath, handleLogout, onRefreshUser }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     
     // State lưu dữ liệu form
     const [profileData, setProfileData] = useState({
+        id: '', // [QUAN TRỌNG] Thêm ID để backend biết update ai (nếu backend không lấy từ token)
         full_name: '',
         email: '',
         phone: '',
@@ -30,30 +36,26 @@ export const ProfileScreen = ({ setPath, handleLogout }) => {
         const fetchUserData = async () => {
             try {
                 const data = await getProfile(); 
-                
-                // [DEBUG] Xem dữ liệu API trả về có gì
                 console.log(">>> Profile Data API:", data);
 
                 if (isMounted && data) {
-                    // Merge dữ liệu API vào state hiện tại để tránh undefined
                     setProfileData(prev => ({
                         ...prev,
                         ...data,
-                        // Đảm bảo các trường không bị null làm crash input
+                        // Mapping lại các trường quan trọng để tránh null/undefined
+                        id: data.id || data.user_id || prev.id, // [FIX] Lấy ID từ data trả về
                         full_name: data.full_name || '',
                         phone: data.phone || '',
                         address: data.address || '',
                         email: data.email || '',
+                        date_of_birth: data.date_of_birth || ''
                     })); 
                 }
             } catch (error) {
                 console.error("Lỗi tải hồ sơ:", error);
-                if (error.message?.includes('token') || error.status === 401 || error.status === 403) {
+                if (error.response?.status === 401 || error.response?.status === 403) {
                     alert('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
                     handleLogout();
-                } else {
-                    // Không alert lỗi 404 để tránh spam nếu user mới chưa có profile
-                    console.warn("Chưa có thông tin chi tiết hoặc lỗi mạng.");
                 }
             } finally {
                 if (isMounted) setIsLoading(false);
@@ -61,17 +63,21 @@ export const ProfileScreen = ({ setPath, handleLogout }) => {
         };
 
         fetchUserData();
-
         return () => { isMounted = false; };
-    }, []); 
+    }, [handleLogout]); 
 
-    // Format ngày để hiển thị input date (YYYY-MM-DD)
+    // Helper: Format ngày để hiển thị input date (YYYY-MM-DD)
     const formatDateForInput = (isoString) => {
         if (!isoString) return '';
         // Cắt chuỗi ISO lấy phần yyyy-mm-dd
-        return isoString.toString().split('T')[0];
+        try {
+            return new Date(isoString).toISOString().split('T')[0];
+        } catch (e) {
+            return isoString?.toString().split('T')[0] || '';
+        }
     };
 
+    // Helper: Format ngày để hiển thị text (DD/MM/YYYY)
     const formatDateDisplay = (isoString) => {
         if (!isoString) return 'Chưa cập nhật';
         try {
@@ -82,48 +88,69 @@ export const ProfileScreen = ({ setPath, handleLogout }) => {
     };
 
     const handleChange = (e) => {
-        setProfileData({ ...profileData, [e.target.name]: e.target.value });
+        const { name, value } = e.target;
+        setProfileData(prev => ({ ...prev, [name]: value }));
     };
 
-    // 2. Xử lý Lưu dữ liệu thật
+    // 2. Xử lý Lưu dữ liệu thật [CODE ĐÃ SỬA LOGIC]
     const handleSave = async () => {
-        if (!profileData.full_name || !profileData.phone) {
-            return alert("Họ tên và Số điện thoại là bắt buộc!");
-        }
+        // Validate
+        if (!profileData.full_name?.trim()) return alert("Họ tên không được để trống!");
+        if (!profileData.phone?.trim()) return alert("Số điện thoại không được để trống!");
 
         setIsSaving(true);
         try {
-            // [FIX]: Chuyển chuỗi rỗng thành null để DB không lỗi ngày tháng
-            const dobPayload = profileData.date_of_birth ? profileData.date_of_birth : null;
-
+            // Chuẩn bị payload gửi API
             const payload = {
+                id: profileData.id, 
                 full_name: profileData.full_name,
                 phone: profileData.phone,
                 address: profileData.address,
-                date_of_birth: dobPayload
+                date_of_birth: profileData.date_of_birth ? formatDateForInput(profileData.date_of_birth) : null
             };
 
-            console.log(">>> Gửi payload:", payload); // Debug xem gửi gì đi
-
+            // 1. GỌI API CẬP NHẬT DB
             await updateProfile(payload); 
             
+            // 2. CẬP NHẬT LOCALSTORAGE (QUAN TRỌNG NHẤT)
+            // Lấy user hiện tại từ bộ nhớ
+            const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+            
+            // Tạo user mới bằng cách gộp thông tin cũ + thông tin mới thay đổi
+            // [FIX]: Cập nhật cả 'fullName' và 'full_name' để Navbar nào cũng hiểu
+            const newUser = {
+                ...storedUser,
+                full_name: profileData.full_name, // Cho code mới
+                fullName: profileData.full_name,  // Cho code cũ
+                phone: profileData.phone,
+                address: profileData.address
+            };
+
+            // Lưu đè lại vào LocalStorage
+            localStorage.setItem('user', JSON.stringify(newUser));
+            console.log(">>> Đã cập nhật LocalStorage:", newUser);
+
+            // 3. BÁO CHO APP.JS CẬP NHẬT NAVBAR
+            if (onRefreshUser) {
+                console.log(">>> Gọi onRefreshUser...");
+                onRefreshUser(); 
+            } else {
+                console.warn(">>> CẢNH BÁO: Chưa nhận được prop onRefreshUser");
+            }
+
             alert('Cập nhật hồ sơ thành công!');
             setIsEditing(false);
-            
-            // Cập nhật lại localStorage để Header hiển thị tên mới ngay lập tức
-            const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
-            storedUser.fullName = profileData.full_name;
-            localStorage.setItem('user', JSON.stringify(storedUser));
 
         } catch (error) {
-            console.error(error);
-            alert('Lỗi cập nhật: ' + (error.message || 'Lỗi server'));
+            console.error("Lỗi Save:", error);
+            const msg = error.response?.data?.message || error.message || 'Lỗi server';
+            alert('Lỗi cập nhật: ' + msg);
         } finally {
             setIsSaving(false);
         }
     };
 
-    // Xác định role để hiển thị các trường đặc biệt
+    // Xác định role
     const isEmployee = ['Owner', 'Shipper', 'Sales', 'Warehouse', "Online Sales"].includes(profileData.role_name);
 
     if (isLoading) {
@@ -152,11 +179,9 @@ export const ProfileScreen = ({ setPath, handleLogout }) => {
                         <h1 className="text-3xl font-bold tracking-wide">Hồ sơ cá nhân</h1>
                         <p className="text-gray-300 text-sm mt-1 opacity-80">Quản lý thông tin tài khoản Aura Store</p>
                     </div>
-                   
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    
                     {/* --- CỘT TRÁI: AVATAR & ACTIONS --- */}
                     <div className="lg:col-span-1">
                         <div className="bg-white rounded-2xl shadow-lg overflow-hidden relative border-t-4 border-[#D4AF37]">
@@ -181,22 +206,19 @@ export const ProfileScreen = ({ setPath, handleLogout }) => {
                                     ● {profileData.status || 'Unknown'}
                                 </p>
 
-                                {/* Buttons */}
                                 <div className="mt-8 space-y-3">
                                     <button 
                                         onClick={() => setPath('/change-password')}
                                         className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-gray-200 text-gray-700 hover:border-[#D4AF37] hover:text-[#D4AF37] hover:bg-yellow-50 transition-all font-medium"
                                     >
-                                        <Key className="w-4 h-4" />
-                                        Đổi mật khẩu
+                                        <Key className="w-4 h-4" /> Đổi mật khẩu
                                     </button>
                                     
                                     <button 
                                         onClick={handleLogout}
                                         className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 hover:shadow-md transition-all font-medium"
                                     >
-                                        <LogOut className="w-4 h-4" />
-                                        Đăng xuất
+                                        <LogOut className="w-4 h-4" /> Đăng xuất
                                     </button>
                                 </div>
                             </div>
@@ -208,8 +230,7 @@ export const ProfileScreen = ({ setPath, handleLogout }) => {
                         <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 h-full">
                             <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-100">
                                 <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                                    <User className="w-5 h-5 text-[#D4AF37]" />
-                                    Thông tin chi tiết
+                                    <User className="w-5 h-5 text-[#D4AF37]" /> Thông tin chi tiết
                                 </h3>
                                 {!isEditing ? (
                                     <button 
@@ -240,7 +261,7 @@ export const ProfileScreen = ({ setPath, handleLogout }) => {
                                     )}
                                 </div>
 
-                                {/* EMAIL */}
+                                {/* EMAIL (Read Only) */}
                                 <div>
                                     <Label icon={<Mail/>} text="Email" />
                                     <DisplayValue value={profileData.email} readOnly={true} />

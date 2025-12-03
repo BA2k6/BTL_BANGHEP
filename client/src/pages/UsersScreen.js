@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-// NHỚ IMPORT HÀM adminUpdateUserStatus VÀO NHÉ
 import { getUsers, adminResetPassword, adminUpdateUserStatus } from '../services/api'; 
 import { 
-    Search, Filter, 
+    Search, 
     Shield, User, Truck, ShoppingBag, Headset, 
     Key, X, CheckCircle, AlertCircle, Loader,
-    Lock, Unlock 
+    Lock, Unlock, RefreshCcw 
 } from 'lucide-react';
 
 // --- HELPER: MÀU SẮC ROLE ---
@@ -60,33 +59,23 @@ const ResetPasswordModal = ({ isOpen, onClose, targetUser }) => {
     if (!isOpen || !targetUser) return null;
 
     const handleReset = async (e) => {
-    e.preventDefault();
-    if (!newPass.trim()) return alert("Vui lòng nhập mật khẩu mới");
+        e.preventDefault();
+        if (!newPass.trim()) return alert("Vui lòng nhập mật khẩu mới");
 
-    // 1. Lấy ID (Ưu tiên user_id vì Database MySQL thường trả về cái này)
-    const userId = targetUser.user_id || targetUser.userId || targetUser.id;
+        const userId = targetUser.user_id || targetUser.userId || targetUser.id;
+        if (!userId) return alert("Lỗi: Không tìm thấy ID của user này.");
 
-    // 2. Debug: Nếu dòng này in ra undefined -> Lỗi do lấy sai ID từ dòng dữ liệu
-    console.log("Check ID User cần reset:", userId); 
-
-    if (!userId) {
-        return alert("Lỗi: Không tìm thấy ID của user này (user_id bị thiếu).");
-    }
-
-    try {
-        setLoading(true);
-        // 3. Gọi hàm API (đã sửa ở bước 1)
-        await adminResetPassword(userId, newPass);
-        
-        alert('Đổi mật khẩu thành công!');
-        onClose();
-    } catch (error) {
-        console.error("Lỗi API:", error);
-        alert('Lỗi: ' + (error.message || "Không thể reset mật khẩu"));
-    } finally {
-        setLoading(false);
-    }
-
+        try {
+            setLoading(true);
+            await adminResetPassword(userId, newPass);
+            alert('Đổi mật khẩu thành công!');
+            onClose();
+        } catch (error) {
+            console.error("Lỗi API:", error);
+            alert('Lỗi: ' + (error.message || "Không thể reset mật khẩu"));
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -138,8 +127,8 @@ const ResetPasswordModal = ({ isOpen, onClose, targetUser }) => {
     );
 };
 
-// --- MÀN HÌNH CHÍNH ---
-export const UsersScreen = ({ currentUser }) => {
+// --- MÀN HÌNH CHÍNH (Đã tích hợp Auto-Refresh) ---
+export const UsersScreen = ({ currentUser, refreshKey }) => {
     const [users, setUsers] = useState([]);
     const [filteredUsers, setFilteredUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -148,64 +137,63 @@ export const UsersScreen = ({ currentUser }) => {
     const [selectedUser, setSelectedUser] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    useEffect(() => {
-        fetchUsers();
-    }, []);
-
-    const fetchUsers = async () => {
-        setLoading(true);
+    // [THAY ĐỔI 1]: Tách logic gọi API ra thành hàm riêng có tham số
+    const fetchData = async (showLoading = false) => {
+        if (showLoading) setLoading(true);
         try {
             const data = await getUsers();
-            console.log("[DEBUG] Dữ liệu Users tải về:", data); // Check xem trường ID tên là gì
             setUsers(data);
-            setFilteredUsers(data);
+            // Lưu ý: Nếu đang search thì không ghi đè filteredUsers lung tung
+            // (Đoạn này để useEffect search tự xử lý, ta chỉ update source `users`)
         } catch (error) {
             console.error("Lỗi tải user:", error);
         } finally {
-            setLoading(false);
+            if (showLoading) setLoading(false);
         }
     };
 
-    // --- [FIX 2] LOGIC KHÓA/MỞ KHÓA MỚI ---
-    const handleToggleStatus = async (user) => {
-        console.log("[DEBUG] Click User:", user);
+    // [THAY ĐỔI 2]: useEffect kích hoạt Polling (5 giây/lần)
+    useEffect(() => {
+        // 1. Gọi lần đầu tiên (có hiện Loading quay quay)
+        fetchData(true);
 
-        // 1. Lấy ID an toàn
+        // 2. Thiết lập bộ đếm: Gọi mỗi 5 giây (KHÔNG hiện Loading để tránh nháy)
+        const intervalId = setInterval(() => {
+            // console.log("[Auto-Refresh] Đang cập nhật danh sách user...");
+            fetchData(false); 
+        }, 5000); // 5000ms = 5 giây
+
+        // 3. Dọn dẹp bộ đếm khi thoát trang (Unmount)
+        return () => clearInterval(intervalId);
+
+    }, [refreshKey]); // Nếu bấm Lưu bên Profile, nó cũng kích hoạt gọi lại ngay lập tức
+
+    // Logic Khóa/Mở khóa
+    const handleToggleStatus = async (user) => {
         const userId = user.user_id || user.id || user.userId;
         if (!userId) return alert("Lỗi: Không tìm thấy ID user!");
 
-        // 2. Kiểm tra trạng thái hiện tại (Active hay không)
         const isCurrentlyActive = isActiveUser(user.status);
-        
-        // 3. Xác định trạng thái mới và text hiển thị
         const actionText = isCurrentlyActive ? 'KHÓA' : 'MỞ KHÓA';
-        const newStatus = isCurrentlyActive ? 'Locked' : 'Active'; // Backend nhận chuỗi
-        // Nếu backend nhận số, hãy đổi dòng trên thành: const newStatus = isCurrentlyActive ? 0 : 1;
+        const newStatus = isCurrentlyActive ? 'Locked' : 'Active';
 
         if (!window.confirm(`Bạn có chắc chắn muốn ${actionText} tài khoản ${user.username} không?`)) return;
 
         try {
-            console.log(`[DEBUG] Gửi API: ID=${userId}, Status=${newStatus}`);
-            
-            // Gọi API
             await adminUpdateUserStatus(userId, newStatus);
-            
-            // Cập nhật State Local (Optimistic UI)
+            // Cập nhật ngay lập tức trên giao diện
             const updateLogic = (u) => {
-                const uId = u.user_id || u.id || u.userId; // So sánh ID an toàn
+                const uId = u.user_id || u.id || u.userId;
                 return uId === userId ? { ...u, status: newStatus } : u;
             };
-
             setUsers(prev => prev.map(updateLogic));
-            setFilteredUsers(prev => prev.map(updateLogic));
-
         } catch (error) {
-            console.error("[DEBUG] Lỗi Toggle Status:", error);
-            alert('Lỗi cập nhật trạng thái: ' + (error.response?.data?.message || error.message));
+            console.error(error);
+            alert('Lỗi cập nhật trạng thái');
         }
     };
 
-    // Logic Lọc
+    // Logic Lọc (Chạy mỗi khi users thay đổi hoặc nhập search)
     useEffect(() => {
         let result = users;
         const myRole = (currentUser?.roleName || '').toLowerCase();
@@ -223,13 +211,26 @@ export const UsersScreen = ({ currentUser }) => {
             );
         }
         setFilteredUsers(result);
-    }, [searchTerm, users, currentUser]);
+    }, [searchTerm, users, currentUser]); // users thay đổi (do polling) -> filteredUsers tự update theo
 
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-gray-800">Quản lý Tài khoản</h1>
-                <p className="text-sm text-gray-500 mt-1">Danh sách tài khoản và chức năng quản trị</p>
+            <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-800">Quản lý Tài khoản</h1>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Danh sách tự động cập nhật mỗi 5 giây
+                    </p>
+                </div>
+                
+                {/* Nút làm mới thủ công (nếu muốn bấm ngay lập tức) */}
+                <button 
+                    onClick={() => fetchData(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-all shadow-sm font-medium"
+                >
+                    <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 
+                    Làm mới
+                </button>
             </div>
             
             {/* Search Bar */}
@@ -248,7 +249,7 @@ export const UsersScreen = ({ currentUser }) => {
 
             {/* Table */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                {loading ? (
+                {loading && users.length === 0 ? ( // Chỉ hiện loading lớn khi chưa có dữ liệu lần đầu
                     <div className="p-10 text-center text-gray-500 flex flex-col items-center justify-center">
                         <Loader className="w-8 h-8 animate-spin text-blue-500 mb-2" />
                         <p>Đang tải dữ liệu...</p>
@@ -268,9 +269,7 @@ export const UsersScreen = ({ currentUser }) => {
                             <tbody className="divide-y divide-gray-50">
                                 {filteredUsers.length > 0 ? (
                                     filteredUsers.map(user => {
-                                        // Kiểm tra Active cho UI
                                         const isLocked = !isActiveUser(user.status);
-                                        
                                         return (
                                             <tr key={user.user_id || user.id || Math.random()} className={`hover:bg-gray-50 transition-colors group ${isLocked ? 'bg-gray-50/50' : ''}`}>
                                                 <td className="p-4">
@@ -340,7 +339,6 @@ export const UsersScreen = ({ currentUser }) => {
                 )}
             </div>
 
-            {/* Modal */}
             <ResetPasswordModal 
                 isOpen={isModalOpen} 
                 onClose={() => setIsModalOpen(false)} 

@@ -236,7 +236,7 @@ export const DashboardScreen = () => {
                         <TrendingUp size={20} className="text-blue-600" />
                         Phân tích Kinh doanh
                     </h2>
-                    <div className="flex-1 flex justify-center min-w-[200px]">
+                    <div className="flex-1 flex min-w-[200px]">
                         <div className="flex items-center bg-white border border-gray-200 rounded-lg px-4 py-1.5 shadow-sm hover:border-blue-300 transition-colors cursor-pointer group">
                             <Calendar size={16} className="text-gray-400 group-hover:text-blue-500 transition-colors mr-2" />
                             <label className="text-xs font-semibold text-gray-500 mr-2 uppercase tracking-wide">Năm:</label>
@@ -245,10 +245,10 @@ export const DashboardScreen = () => {
                             </select>
                         </div>
                     </div>
-                    <div className="flex-1 flex justify-end min-w-[200px]">
-                        <div className="flex items-center bg-white p-1 rounded-lg border border-gray-200 shadow-sm">
-                            <button onClick={() => setViewMode('chart')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${viewMode === 'chart' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}><BarChart2 size={16}/> Xem Biểu đồ</button>
-                            <button onClick={() => setViewMode('table')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${viewMode === 'table' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}><Table size={16}/> Xem Bảng Chi tiết</button>
+                    <div className="flex-1 flex min-w-[100px] max-h-10">
+                        <div className="flex items-center bg-white p-1 rounded-lg border border-gray-200 shadow-sm max-h-10">
+                            <button onClick={() => setViewMode('chart')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2 max-h-10 ${viewMode === 'chart' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 '}`}><BarChart2 size={16}/> Xem Biểu đồ</button>
+                            <button onClick={() => setViewMode('table')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2 max-h-10 ${viewMode === 'table' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}><Table size={16}/> Xem Bảng Chi tiết</button>
                         </div>
                     </div>
                 </div>

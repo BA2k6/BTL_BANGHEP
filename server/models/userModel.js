@@ -148,7 +148,7 @@ const userModel = {
         };
     },
 
-    // ============================================================
+// ============================================================
     // 2. CẬP NHẬT HỒ SƠ KHÁCH HÀNG
     // ============================================================
     updateCustomerProfile: async (userId, data) => {
@@ -157,6 +157,7 @@ const userModel = {
             SET full_name = ?, phone = ?, address = ?, date_of_birth = ?
             WHERE user_id = ?
         `;
+        // Chú ý: db.query trả về mảng [rows, fields], ta cần lấy phần tử đầu tiên
         const [result] = await db.query(query, [data.full_name, data.phone, data.address, data.date_of_birth, userId]);
         return result;
     },

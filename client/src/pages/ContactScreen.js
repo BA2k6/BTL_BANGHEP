@@ -1,57 +1,74 @@
+// C:\Users\Admin\Downloads\DUANWEB(1)\client\src\pages\ContactScreen.js
 import React from 'react';
-import { ArrowLeft, Mail, Phone, MapPin, Send, Clock } from 'lucide-react';
+import { ArrowLeft, Mail, Phone, MapPin, Send, Clock, User, MessageSquare } from 'lucide-react';
 import Footer from '../components/Footer'; 
-import NenLogin from '../assets/nen.png'; // Đảm bảo bạn đã có hình này trong thư mục assets
+import NenLogin from '../assets/nen.png'; // Đảm bảo hình nền đã có
 
-// --- COMPONENT CON: CONTACT ITEM ---
+// --- COMPONENT CON: CONTACT ITEM (Được Refine lại cho nền tối) ---
 const ContactItem = ({ icon: Icon, title, content }) => (
-    <div className="flex items-start gap-4 group">
-        <div className="w-12 h-12 rounded-full border border-white/20 flex items-center justify-center text-[#E2B657] group-hover:bg-[#E2B657] group-hover:text-black transition-all duration-300 flex-shrink-0 shadow-[0_0_15px_rgba(226,182,87,0.1)] group-hover:shadow-[0_0_20px_rgba(226,182,87,0.6)]">
-            <Icon size={20} />
+    <div className="flex items-start gap-5 group p-3 rounded-xl transition-all duration-300 hover:bg-white/5 border border-transparent hover:border-[#E2B657]/20">
+        {/* Icon Circle */}
+        <div className="w-12 h-12 rounded-full border border-[#E2B657]/30 flex items-center justify-center text-[#E2B657] group-hover:bg-[#E2B657] group-hover:text-black transition-all duration-500 flex-shrink-0 shadow-[0_0_15px_rgba(226,182,87,0.1)] group-hover:shadow-[0_0_25px_rgba(226,182,87,0.6)] bg-black/40 backdrop-blur-sm">
+            <Icon size={22} />
         </div>
+        {/* Text Content */}
         <div className="pt-1">
-            <div className="text-xs text-gray-400 uppercase tracking-widest mb-1 group-hover:text-[#E2B657] transition-colors">{title}</div>
-            <div className="text-lg font-medium text-white group-hover:text-[#E2B657] transition-colors duration-300 drop-shadow-md">{content}</div>
+            <div className="text-xs text-[#E2B657] uppercase tracking-[0.2em] mb-1 font-bold opacity-80 group-hover:opacity-100 transition-opacity">{title}</div>
+            <div className="text-lg font-medium text-gray-100 group-hover:text-white transition-colors duration-300 drop-shadow-md">{content}</div>
         </div>
     </div>
 );
 
-// --- CÁC HẰNG SỐ STYLE ---
-const MAIN_BG = 'bg-transparent'; // Để trong suốt để hiện hình nền
-const CARD_BG = 'bg-black/60 backdrop-blur-md'; // Nền kính mờ tối
-const LIGHT_FORM_BG = 'bg-white/95 backdrop-blur-sm'; // Nền kính mờ sáng (Form)
-const LIGHT_INPUT_BG = 'bg-gray-50'; // Nền input
-const ACCENT_COLOR = 'text-[#E2B657]';
+// --- COMPONENT CON: FORM INPUT (Dark Luxury Style - Không dùng nền trắng nữa) ---
+const FormInput = ({ label, type = "text", placeholder, icon: Icon, isTextArea = false }) => {
+    const Component = isTextArea ? "textarea" : "input";
+    return (
+        <div className="group space-y-2">
+            <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-white font-bold group-focus-within:text-[#E2B657] transition-colors duration-300">
+                {Icon && <Icon size={14} />} {label}
+            </label>
+            <div className="relative">
+                <Component 
+                    type={type}
+                    rows={isTextArea ? 3 : undefined}
+                    className={`w-full bg-white/5 border border-white/50 rounded-lg p-3 text-white placeholder-gray-300 
+                    focus:bg-black/40 focus:border-[#E2B657] focus:ring-1 focus:ring-[#E2B657] focus:shadow-[0_0_20px_rgba(226,182,87,0.1)]
+                    outline-none transition-all duration-300 shadow-inner ${isTextArea ? 'resize-none' : ''}`} 
+                    placeholder={placeholder} 
+                />
+                {/* Decoration Line: Đường kẻ vàng chạy dưới chân khi focus */}
+                <div className="absolute bottom-0 left-0 h-[1px] w-0 bg-[#E2B657] transition-all duration-500 group-focus-within:w-full mx-auto right-0"></div>
+            </div>
+        </div>
+    );
+};
 
 export const ContactScreen = ({ setPath }) => {
     return (
-        <div className={`min-h-screen w-full ${MAIN_BG} text-white font-sans flex flex-col relative overflow-hidden`}>
+        <div className="min-h-screen w-full bg-black text-white font-sans flex flex-col relative overflow-hidden selection:bg-[#E2B657] selection:text-black">
             
             {/* =====================================================================================
-                1. BACKGROUND LAYERS (HÌNH NỀN + LỚP PHỦ + HIỆU ỨNG)
+                1. BACKGROUND LAYERS (Nền + Hiệu ứng ánh sáng)
                ===================================================================================== */}
             <div className="fixed inset-0 z-0 pointer-events-none">
-                {/* Hình nền gốc */}
-                <img 
-                    src={NenLogin} 
-                    alt="Contact Background" 
-                    className="w-full h-full object-cover"
-                />
+                <img src={NenLogin} alt="Contact Background" className="w-full h-full object-cover opacity-80" />
                 
+                {/* Lớp phủ gradient tối để làm nổi bật nội dung */}
+                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/90"></div>
                 
-
-                {/* Hiệu ứng Blob (Đốm sáng) màu vàng */}
-                <div className="absolute inset-0 opacity-40 mix-blend-screen">
-                    <div className="absolute -top-1/4 -left-1/4 w-96 h-96 bg-[#E2B657]/20 rounded-full blur-[100px] animate-pulse"></div>
-                    <div className="absolute bottom-0 right-0 w-80 h-80 bg-[#E2B657]/20 rounded-full blur-[120px] animate-pulse delay-500"></div>
+                {/* Hiệu ứng Blob (Đốm sáng vàng) */}
+                <div className="absolute inset-0 opacity-40 mix-blend-screen overflow-hidden">
+                    <div className="absolute top-0 -left-1/4 w-[600px] h-[600px] bg-[#E2B657]/20 rounded-full blur-[120px] animate-pulse"></div>
+                    <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-[#E2B657]/10 rounded-full blur-[100px] animate-pulse delay-1000"></div>
                 </div>
+                
             </div>
 
             {/* =====================================================================================
-                2. HEADER (Back Button & Title)
+                2. HEADER
                ===================================================================================== */}
-            <header className={`fixed top-0 left-0 w-full z-50 flex items-center px-6 py-4 bg-black/50 backdrop-blur-md border-b border-white/10`}>
-                <div className="flex-1 text-center relative w-full max-w-7xl mx-auto">
+            <header className="fixed top-0 left-0 w-full z-50 flex items-center px-6 py-4 bg-black/40 backdrop-blur-md border-b border-white/10 transition-all duration-500 hover:bg-black/60">
+                <div className="flex-1 text-center relative w-full max-w-7xl  ">
                     <button
                         onClick={() => setPath('/')}
                         className="absolute left-0 top-1/2 -translate-y-1/2 z-50 flex items-center gap-2 text-gray-400 hover:text-white transition-colors group"
@@ -60,130 +77,118 @@ export const ContactScreen = ({ setPath }) => {
                             <ArrowLeft className="w-5 h-5 group-hover:text-[#E2B657] transition-colors" />
                         </div>
                     </button>
-                    <h2 className="text-xl font-bold uppercase tracking-widest text-white drop-shadow-md">Liên Hệ</h2>
+                    <h2 className="text-xl font-bold uppercase tracking-[0.2em] text-white drop-shadow-md">Liên Hệ</h2>
                 </div>
             </header>
 
             {/* =====================================================================================
                 3. MAIN CONTENT
                ===================================================================================== */}
-            <main className="flex-1 pt-20 z-10 relative"> 
-                <div className="w-full max-w-7xl mx-auto px-4 md:px-8 py-10">
+            <main className="flex-1 pt-24 pb-20 z-10 relative"> 
+                <div className="w-full max-w-7xl mx-auto px-4 md:px-8">
                     
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-10 lg:gap-16">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20 items-start">
 
                         {/* --- LEFT COLUMN: INFO SECTION --- */}
-                        <div className={`md:col-span-8 p-6 md:p-10 ${CARD_BG} relative rounded-xl shadow-2xl overflow-hidden
-                                         group transition-all duration-500 ease-in-out
-                                         border border-[#E2B657]/20 hover:border-[#E2B657]/50`}>
+                        <div className="lg:col-span-7 space-y-10">
                             
-                            {/* Họa tiết nhiễu hạt (Noise texture) */}
-                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay pointer-events-none"></div>
+                            {/* HERO TITLE BLOCK */}
+{/* HERO TITLE BLOCK - ĐÃ FIX LỖI DÍNH DÒNG & RỚT CHỮ */}
+{/* HERO TITLE BLOCK - FIX LỖI DÍNH DÒNG VÀ RỚT CHỮ */}
+<div className="mb-8 lg:mb-10">
 
-                            <h1 className={`text-3xl md:text-4xl font-black uppercase mb-5 ${ACCENT_COLOR} drop-shadow-lg`}>
-                                Tư vấn & <br /> Hỗ trợ khách hàng
-                            </h1>
-                            <p className="text-gray-200 mb-8 text-md font-light leading-relaxed border-l-2 border-[#E2B657] pl-4">
-                                Chúng tôi luôn sẵn lòng giải đáp mọi thắc mắc của bạn về sản phẩm, dịch vụ hoặc cần hỗ trợ kỹ thuật một cách nhanh chóng nhất.
-                            </p>
 
-                            <div className="space-y-8 mt-10">
+<h1 className="text-2xl md:text-3xl lg:text-5xl font-black uppercase tracking-widest mb-6 scale-y-110">
+    {/* Container */}
+    <span className="relative group block w-fit cursor-pointer select-none">
+        
+        {/* Lớp 1: Chữ gốc - ĐÃ SỬA: Đưa leading-normal vào đây */}
+        <span className="relative z-10 block bg-clip-text text-transparent bg-gradient-to-b from-[#e4d9b4] via-[#e5c24f] to-[#886600] drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] pb-3 leading-tight">
+            TƯ VẤN VÀ <br /> HỖ TRỢ KHÁCH HÀNG
+        </span>
+
+        {/* Lớp 2: Hiệu ứng quét sáng - ĐÃ SỬA: Đưa leading-normal vào đây để khớp với lớp 1 */}
+        <span className="absolute inset-0 z-20 block bg-clip-text text-transparent bg-gradient-to-r from-transparent via-white/90 to-transparent bg-no-repeat bg-[length:200%_100%] bg-[position:-100%_0] group-hover:bg-[position:200%_0] transition-[background-position] duration-700 ease-in-out pb-2 leading-tight" aria-hidden="true">
+            TƯ VẤN VÀ <br /> HỖ TRỢ KHÁCH HÀNG
+        </span>
+        
+    </span>
+</h1>
+    <p className="text-gray-300 text-sm md:text-base lg:text-lg font-light leading-relaxed border-l-4 border-[#E2B657] pl-6 max-w-xl bg-gradient-to-r from-white/5 to-transparent py-4 pr-4 rounded-r-xl">
+        Chúng tôi luôn sẵn lòng giải đáp mọi thắc mắc của bạn về sản phẩm, dịch vụ. Đội ngũ Aura Store cam kết phản hồi trong thời gian sớm nhất với sự tận tâm tuyệt đối.
+    </p>
+</div>
+
+                            {/* CONTACT ITEMS GRID */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8 pt-4">
                                 <ContactItem icon={Phone} title="Hotline" content="1900 888 888" />
-                                <ContactItem icon={Mail} title="Email" content="support@aurastore.com" />
-                                <ContactItem icon={MapPin} title="Địa chỉ" content="Hà Nội, Việt Nam" />
-                                <ContactItem icon={Clock} title="Giờ mở cửa" content="09:00 - 22:00 (Mỗi ngày)" />
+                                <ContactItem icon={Mail} title="Email" content="support@aura.com" />
+                                <ContactItem icon={MapPin} title="Showroom" content="Hà Nội, Việt Nam" />
+                                <ContactItem icon={Clock} title="Giờ mở cửa" content="09:00 - 22:00" />
                             </div>
                         </div>
 
-                        {/* --- RIGHT COLUMN: FORM SECTION --- */}
-                        <div className={`md:col-span-4 p-6 md:p-10 ${LIGHT_FORM_BG} rounded-xl relative
-                                         transition-all duration-300 ease-in-out group 
-                                         shadow-2xl hover:shadow-[0_0_30px_rgba(226,182,87,0.5)] 
-                                         hover:scale-[1.01] transform`}>
+                        {/* --- RIGHT COLUMN: FORM SECTION (DARK GLASS - THAY VÌ NỀN TRẮNG CŨ) --- */}
+                        <div className="lg:col-span-5 relative group mt-4 lg:mt-0">
                             
-                            {/* Viền sáng khi hover */}
-                            <div className="absolute inset-0 rounded-xl border-4 border-transparent 
-                                         group-hover:border-[#E2B657]/70 transition-colors duration-300 pointer-events-none"></div>
+                            {/* Hiệu ứng hào quang sau lưng form */}
+                            <div className="absolute inset-0 bg-[#E2B657] rounded-2xl blur-2xl opacity-10 group-hover:opacity-20 transition-opacity duration-70 0"></div>
                             
-                            <h2 className={`text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3 border-b border-gray-200 pb-4`}>
-                                <Send size={24} className={ACCENT_COLOR}/> Gửi tin nhắn
-                            </h2>
-                            
-                            <form className="space-y-5 w-full" onSubmit={(e) => e.preventDefault()}>
-                                <div>
-                                    <label className="block text-xs uppercase tracking-widest text-gray-600 mb-2 font-bold">Họ tên</label>
-                                    <input 
-                                        type="text" 
-                                        className={`w-full ${LIGHT_INPUT_BG} border border-gray-200 rounded-lg p-3 text-gray-800 placeholder-gray-400 focus:border-[#E2B657] focus:ring-1 focus:ring-[#E2B657] outline-none transition-all shadow-sm`} 
-                                        placeholder="Tên của bạn" 
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs uppercase tracking-widest text-gray-600 mb-2 font-bold">Email</label>
-                                    <input 
-                                        type="email" 
-                                        className={`w-full ${LIGHT_INPUT_BG} border border-gray-200 rounded-lg p-3 text-gray-800 placeholder-gray-400 focus:border-[#E2B657] focus:ring-1 focus:ring-[#E2B657] outline-none transition-all shadow-sm`} 
-                                        placeholder="example@email.com" 
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs uppercase tracking-widest text-gray-600 mb-2 font-bold">Lời nhắn</label>
-                                    <textarea 
-                                        rows="4" 
-                                        className={`w-full ${LIGHT_INPUT_BG} border border-gray-200 rounded-lg p-3 text-gray-800 placeholder-gray-400 focus:border-[#E2B657] focus:ring-1 focus:ring-[#E2B657] outline-none transition-all shadow-sm resize-none`} 
-                                        placeholder="Bạn cần hỗ trợ gì?"
-                                    ></textarea>
-                                </div>
-                                {/* --- NÚT GỬI (ĐÃ SỬA) --- */}
-<div className="relative mt-6 group">
-    {/* 1. Lớp hào quang nhấp nháy (Breathing Glow) */}
-    {/* - animate-pulse: Tạo hiệu ứng nhấp nháy mờ/tỏ liên tục
-        - blur-lg: Làm nhòe để tạo thành hào quang
-        - opacity-75: Độ trong suốt vừa phải để không lấn át nút
-    */}
-    <div className="absolute -inset-1 bg-gradient-to-r from-[#E2B657] to-[#FDB931] rounded-lg blur-lg opacity-75 animate-pulse transition duration-1000 group-hover:opacity-100 group-hover:duration-200"></div>
-    
-    {/* 2. Nút chính */}
-    <button className="relative w-full bg-gradient-to-r from-[#E2B657] to-[#d4a037] text-black font-extrabold uppercase tracking-widest py-3.5 rounded-lg transition-all flex items-center justify-center gap-3 shadow-xl overflow-hidden hover:scale-[1.02] active:scale-[0.98]">
-        
-        {/* 3. Hiệu ứng quét sáng (Shine Sweep) tự động chạy */}
-        {/* Dải sáng trắng chạy liên tục từ trái qua phải */}
-        <div className="absolute top-0 -left-[100%] w-full h-full bg-gradient-to-r from-transparent via-white/40 to-transparent animate-[shimmer_2s_infinite]"></div>
-        
-        {/* Nội dung nút */}
-        <span className="relative z-10 flex items-center gap-2">
-            <Send size={18} className="animate-bounce" /> {/* Icon nhảy nhẹ */}
-            Gửi ngay
-        </span>
-    </button>
-</div>
+                            <div className="relative bg-black/60 backdrop-blur-xl border border-white rounded-2xl p-4 md:p-8 shadow-3xl transition-transform duration-500 hover:scale-[1.01] hover:shadow-[0_0_30px_rgba(226,182,87,0.4)]">
+                                
+                                <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3 border-b border-white/10 pb-4">
+                                    <span className="w-10 h-10 rounded-full bg-[#E2B657]/10 flex items-center justify-center text-[#E2B657] border border-[#E2B657]/20">
+                                        <Send size={20} /> 
+                                    </span>
+                                    ĐỂ LẠI LỜI NHẮN
+                                </h2>
+                                
+                                <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+                                    <FormInput label="Họ tên" icon={User} placeholder="Nhập tên của bạn" />
+                                    <FormInput label="Email" type="email" icon={Mail} placeholder="example@email.com" />
+                                    <FormInput label="Lời nhắn" isTextArea icon={MessageSquare} placeholder="Bạn cần hỗ trợ gì?" />
 
-{/* --- CSS CHO HIỆU ỨNG QUÉT SÁNG (SHIMMER) --- */}
-{/* Bạn có thể thêm đoạn style này vào ngay phía trên return hoặc trong file CSS global */}
-<style>{`
-    @keyframes shimmer {
-        100% { left: 100%; }
-    }
-`}</style>
-                            </form>
+                                    {/* --- BUTTON GỬI (LUXURY STYLE) --- */}
+                                    <div className="relative mt-8 group/btn cursor-pointer">
+                                        {/* Hào quang nút */}
+                                        <div className="absolute -inset-1 bg-gradient-to-r from-[#E2B657] to-[#FDB931] rounded-lg blur opacity-40 group-hover/btn:opacity-80 transition duration-500"></div>
+                                        
+                                        <button className="relative w-full bg-gradient-to-r from-[#E2B657] to-[#d4a037] text-black font-extrabold uppercase tracking-widest py-4 rounded-lg shadow-[0_0_20px_rgba(226,182,87,0.4)] overflow-hidden active:scale-[0.98] transition-all hover:shadow-[0_0_30px_rgba(226,182,87,0.6)]">
+                                            
+                                            {/* Shine Sweep Effect */}
+                                            <div className="absolute top-0 -left-[100%] w-full h-full bg-gradient-to-r from-transparent via-white/50 to-transparent animate-[shimmer_2s_infinite]"></div>
+                                            
+                                            <span className="relative z-10 flex items-center justify-center gap-2">
+                                                 <Send size={18} className="group-hover/btn:translate-x-1 transition-transform" />GỬI NGAY
+                                            </span>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
 
                     </div>
                 </div>
 
                 {/* Copyright Line */}
-                <div className="pb-10 pt-4 text-center text-xs text-gray-400 w-full max-w-7xl mx-auto px-4 md:px-8 opacity-70">
-                    © {new Date().getFullYear()} Aura Store. All Rights Reserved.
+                <div className="absolute bottom-4 w-full text-center text-[10px] text-gray-500 uppercase tracking-widest opacity-60">
+                    © {new Date().getFullYear()} Aura Store. Luxury Fashion.
                 </div>
             </main>
 
             {/* =====================================================================================
-                4. FOOTER (NỀN ĐEN ĐẶC ĐỂ CHE HÌNH NỀN)
+                4. FOOTER (NỀN ĐEN ĐẶC - ĐỒNG BỘ)
                ===================================================================================== */}
-            <div className="relative z-50 bg-[#050505] border-t border-white/10 shadow-[0_-10px_50px_rgba(0,0,0,1)]">
+            <div className="relative z-50 bg-[#050505] border-t border-white/10 shadow-[0_-20px_60px_rgba(0,0,0,0.8)]">
                 <Footer /> 
             </div>
             
+            {/* CSS Animation */}
+            <style>{`
+                @keyframes shimmer {
+                    100% { left: 100%; }
+                }
+            `}</style>
         </div>
     );
 };

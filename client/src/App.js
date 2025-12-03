@@ -24,7 +24,7 @@ import { ContactScreen } from './pages/ContactScreen';
 import ProductDetail from "./pages/ProductDetail";
 import { ProfileScreen } from './pages/ProfileScreen';
 // Component Chứa Nội dung chính
-const AppContent = ({ path, setPath, currentUser, userRoleName }) => {
+const AppContent = ({ path, setPath, currentUser, userRoleName, onRefreshUser,refreshKey }) => {
     
     const isAuthorized = useMemo(() => {
         // --- 2. CẬP NHẬT: Thêm /about và /contact vào danh sách cho phép ---
@@ -50,21 +50,23 @@ const AppContent = ({ path, setPath, currentUser, userRoleName }) => {
             setPath('/unauthorized');
         }
     }, [isAuthorized, userRoleName, path, setPath]);
+    
 
     switch (path) {
         case '/dashboard': return <DashboardScreen />;
         case '/products': return <ProductsScreen userRoleName={userRoleName} />;
-        case '/customers': return <CustomersScreen userRoleName={userRoleName} />;
+        case '/customers': return <CustomersScreen key={refreshKey} userRoleName={userRoleName} />;
         case '/orders': return <OrdersScreen currentUserId={currentUser?.id} userRoleName={userRoleName} />;
         case '/stockin': return <StockInScreen userRoleName={userRoleName} />;
-        case '/users': return <UsersScreen currentUser={currentUser} />;
-        case '/employees': return <EmployeesScreen />; 
+        case '/users': return <UsersScreen key={refreshKey} currentUser={currentUser} />;
+        case '/employees': return <EmployeesScreen key={refreshKey} />; 
         case '/salaries': return <SalariesScreen userRoleName={userRoleName} />;
         
         case '/unauthorized': return <UnauthorizedScreen setPath={setPath} />;
         case '/about': return <AboutScreen setPath={setPath} />;
         case '/contact': return <ContactScreen setPath={setPath} />;
-        case '/profile': return <ProfileScreen currentUser={currentUser} setPath={setPath} />;
+        case '/profile': 
+            return <ProfileScreen currentUser={currentUser} setPath={setPath} onRefreshUser={onRefreshUser} />;
 
         default: return null;
     }
@@ -76,6 +78,7 @@ export default function App() {
     const [userRoleName, setUserRoleName] = useState(null);
     const [path, setPath] = useState('/'); 
     const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+    const [refreshKey, setRefreshKey] = useState(0);
 
     // --- LOGIC MỚI: XÓA SẠCH PHIÊN ĐĂNG NHẬP KHI F5 / KHỞI ĐỘNG LẠI ---
     useEffect(() => {
@@ -117,6 +120,22 @@ export default function App() {
         localStorage.setItem('user_id', normalizedUser.id);
         localStorage.setItem('user_role_name', normalizedUser.roleName);
         localStorage.setItem('user', JSON.stringify(normalizedUser)); 
+    };
+    const handleRefreshUser = () => {
+        console.log("Refreshing user data from LocalStorage...");
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+            try {
+                const parsedUser = JSON.parse(storedUser);
+                // Cập nhật lại State để Navbar hiển thị tên mới
+                setCurrentUser(parsedUser);
+                // Cập nhật lại Role (phòng trường hợp Role cũng đổi)
+                setUserRoleName(parsedUser.roleName || parsedUser.role_name);
+                setRefreshKey(prev => prev + 1);
+            } catch (error) {
+                console.error("Lỗi parse user data:", error);
+            }
+        }
     };
 
     if (isCheckingAuth) return <div className="flex h-screen items-center justify-center">Đang khởi tạo hệ thống...</div>;
@@ -191,7 +210,7 @@ export default function App() {
             <div className="flex-1 md:ml-64 flex flex-col">
                 <Navbar currentUser={currentUser} handleLogout={handleLogout} setPath={setPath} />
                 <main className="flex-1 overflow-y-auto p-4">
-                    <AppContent path={path} setPath={setPath} currentUser={currentUser} userRoleName={userRoleName} />
+                    <AppContent path={path} setPath={setPath} currentUser={currentUser} userRoleName={userRoleName} onRefreshUser={handleRefreshUser} refreshKey={refreshKey}/>
                 </main>
             </div>
         </div>

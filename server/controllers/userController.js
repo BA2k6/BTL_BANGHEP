@@ -158,13 +158,22 @@ const userController = {
     // ============================================================
     // 6. CẬP NHẬT HỒ SƠ CÁ NHÂN
     // ============================================================
+// ... (các hàm khác giữ nguyên)
+
+    // ============================================================
+    // 6. CẬP NHẬT HỒ SƠ CÁ NHÂN [ĐÃ SỬA LỖI ROLE]
+    // ============================================================
     updateUserProfile: async (req, res) => {
         try {
-            const userId = req.user.userId || req.user.id;
+            // Lấy ID từ Token (An toàn nhất)
+            const userId = req.user.userId || req.user.id; 
             const roleName = req.user.roleName; 
+            
+            console.log(`>>> Update Profile request: User [${userId}] - Role [${roleName}]`);
+
             const { full_name, phone, address, date_of_birth } = req.body;
 
-            // Xử lý ngày tháng null
+            // Xử lý ngày tháng: Nếu rỗng gửi null để tránh lỗi DB
             const dobValue = date_of_birth ? date_of_birth : null;
 
             const data = { 
@@ -175,18 +184,37 @@ const userController = {
             };
 
             let result;
-            const employeeRoles = ['Owner', 'Store Manager', 'Sales Staff', 'Warehouse Staff', 'Shipper'];
             
-            // Phân loại update vào bảng nào
+            // [FIX QUAN TRỌNG]: Cập nhật đúng tên Role như trong Database
+            // Lưu ý: Phải khớp chính xác với Role bạn đã Insert lúc tạo User
+            const employeeRoles = [
+                'Owner', 
+                'Store Manager', 
+                'Sales',          // Sửa từ 'Sales Staff' -> 'Sales'
+                'Online Sales',   // Thêm trường hợp này
+                'Warehouse',      // Sửa từ 'Warehouse Staff' -> 'Warehouse'
+                'Shipper'
+            ];
+            
+            // Kiểm tra xem user thuộc nhóm nhân viên hay khách hàng
             if (employeeRoles.includes(roleName)) {
+                console.log(">>> Updating EMPLOYEE table...");
                 result = await userModel.updateEmployeeProfile(userId, data);
             } else {
+                console.log(">>> Updating CUSTOMER table...");
                 result = await userModel.updateCustomerProfile(userId, data);
             }
 
-            // Kiểm tra kết quả
+            console.log(">>> DB Result:", result);
+
+            // Kiểm tra kết quả thực tế từ DB
             if (result && result.affectedRows === 0) {
-                return res.status(200).json({ message: 'Đã lưu (Không có thay đổi nào được thực hiện).' });
+                // Trường hợp này nghĩa là ID không tồn tại trong bảng tương ứng
+                // Ví dụ: Role là 'Sales' nhưng lại không có dòng nào trong bảng 'employees' có id đó
+                return res.status(404).json({ 
+                    message: 'Cập nhật thất bại. Không tìm thấy bản ghi hồ sơ tương ứng trong DB.',
+                    debug: `Role: ${roleName}, Table Checked: ${employeeRoles.includes(roleName) ? 'Employees' : 'Customers'}`
+                });
             }
 
             res.status(200).json({ message: 'Cập nhật hồ sơ thành công!' });
@@ -196,6 +224,7 @@ const userController = {
             res.status(500).json({ message: 'Lỗi server khi cập nhật hồ sơ.' });
         }
     },
+// ...
 };
 
 module.exports = userController;
