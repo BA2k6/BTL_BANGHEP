@@ -1,4 +1,4 @@
-//C:\Users\Admin\Downloads\DUANWEB(1)\server\models\employeeModel.js
+// C:\Users\Admin\Downloads\DUANWEB(1)\server\models\employeeModel.js
 const db = require('../config/db.config');
 
 const employeeModel = {
@@ -38,12 +38,12 @@ const employeeModel = {
     },
 
     // 4. Xóa User
-    deleteUser: async (userId) => {
+   /* deleteUser: async (userId) => {
         try {
             const query = `DELETE FROM users WHERE user_id = ?`;
             await db.query(query, [userId]);
         } catch (err) { throw err; }
-    },
+    },*/
 
     // 5. Cập nhật thông tin Nhân viên
     update: async (employeeId, data, newPasswordHash) => {
@@ -62,7 +62,6 @@ const employeeModel = {
             ]);
 
             // B. Cập nhật bảng USERS (Chỉ cập nhật Mật khẩu nếu có)
-            // [QUAN TRỌNG]: Không update full_name vào bảng users nữa
             if (newPasswordHash) {
                 const [rows] = await connection.query('SELECT user_id FROM employees WHERE employee_id = ?', [employeeId]);
                 
@@ -88,41 +87,76 @@ const employeeModel = {
         }
     },
 
-    // 6. Tạo mới Nhân viên (HÀM GÂY LỖI CŨ ĐÃ ĐƯỢC SỬA)
+getAllEmployees: async () => { /* ... */ return await db.query("SELECT e.*, u.status, u.username FROM employees e LEFT JOIN users u ON e.user_id = u.user_id ORDER BY e.created_at DESC").then(([rows]) => rows); },
+    checkDuplicate: async (employeeId, email, phone) => { /* ... */ const [rows] = await db.query("SELECT employee_id FROM employees WHERE employee_id = ? OR email = ? OR phone = ?", [employeeId, email, phone]); return rows.length > 0; },
+    getUserIdByEmpId: async (employeeId) => { /* ... */ const [rows] = await db.query("SELECT user_id FROM employees WHERE employee_id = ?", [employeeId]); return rows.length > 0 ? rows[0].user_id : null; },
+    deleteUser: async (userId) => { /* ... */ await db.query("DELETE FROM users WHERE user_id = ?", [userId]); },
+    update: async (employeeId, data, newPasswordHash) => { /* ... logic update giữ nguyên ... */ },
+
+    // ============================================================
+    // 6. TẠO NHÂN VIÊN (SỬA LẠI: USER TỰ ĐỘNG, EMP LẤY TỪ FRONTEND)
+    // ============================================================
     create: async (empData, userData) => {
         const connection = await db.getConnection();
         try {
             await connection.beginTransaction();
 
-            // Bước 1: Tạo User (Chỉ thông tin đăng nhập)
-            // [ĐÃ SỬA]: Xóa cột full_name ở dòng dưới đây
+            // ---------------------------------------------------------
+            // BƯỚC A: TẠO USER ID TỰ ĐỘNG (US1, US2...) - GIỮ NGUYÊN
+            // ---------------------------------------------------------
+            const [userRows] = await connection.query(
+                "SELECT user_id FROM users WHERE user_id LIKE 'US%' ORDER BY LENGTH(user_id) DESC, user_id DESC LIMIT 1"
+            );
+
+            let newUserId = 'US1'; 
+            if (userRows.length > 0) {
+                const lastUserId = userRows[0].user_id; 
+                const userNum = parseInt(lastUserId.substring(2)); 
+                newUserId = `US${userNum + 1}`;
+            }
+
+            // ---------------------------------------------------------
+            // BƯỚC B: INSERT VÀO DB
+            // ---------------------------------------------------------
+
+            // 1. Insert User (Dùng newUserId tự sinh)
             const insertUserSql = `
                 INSERT INTO users (user_id, username, password_hash, role_id, status, must_change_password)
                 VALUES (?, ?, ?, ?, 'Active', TRUE)
             `;
-            
-            // [ĐÃ SỬA]: Xóa userData.full_name khỏi mảng tham số
+            // Lưu ý: Đã bỏ full_name ở bảng users theo yêu cầu trước
             await connection.query(insertUserSql, [
-                userData.user_id, 
+                newUserId, 
                 userData.username, 
                 userData.password_hash, 
                 userData.role_id
             ]);
 
-            // Bước 2: Tạo Employee (Tên thật lưu ở đây)
+            // 2. Insert Employee (DÙNG ID TỪ FRONTEND GỬI LÊN)
             const insertEmpSql = `
-                INSERT INTO employees (employee_id, user_id, full_name, email, phone, date_of_birth, address, start_date, employee_type, department, base_salary, commission_rate)
+                INSERT INTO employees (
+                    employee_id, user_id, full_name, email, phone, 
+                    date_of_birth, address, start_date, employee_type, 
+                    department, base_salary, commission_rate
+                )
                 VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), 'Full-time', ?, ?, ?)
             `;
+            
             await connection.query(insertEmpSql, [
-                empData.employee_id, empData.user_id, empData.full_name, 
-                empData.email, empData.phone, empData.date_of_birth, 
-                empData.address, empData.department, 
-                empData.base_salary, empData.commission_rate
+                empData.employee_id, // <--- Lấy ID frontend (SALE01, WH02...)
+                newUserId,           // <--- Lấy ID User tự sinh (US...)
+                empData.full_name, 
+                empData.email, 
+                empData.phone, 
+                empData.date_of_birth, 
+                empData.address, 
+                empData.department, 
+                empData.base_salary, 
+                empData.commission_rate
             ]);
 
             await connection.commit();
-            return { success: true };
+            return { success: true, employeeId: empData.employee_id, userId: newUserId };
         } catch (error) {
             await connection.rollback();
             throw error;

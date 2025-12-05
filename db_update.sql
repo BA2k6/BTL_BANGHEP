@@ -2,7 +2,7 @@
 -- CHỈ TẠO CẤU TRÚC BẢNG (SCHEMA + GIỮ DỮ LIỆU)
 -- ================================================================
 SET FOREIGN_KEY_CHECKS = 0;
-
+SET SQL_SAFE_UPDATES = 0;
 DROP DATABASE IF EXISTS `store_management_db`;
 CREATE DATABASE `store_management_db` 
   DEFAULT CHARACTER SET utf8mb4 
@@ -91,51 +91,51 @@ CREATE TABLE IF NOT EXISTS `categories` (
   `category_name` VARCHAR(100) NOT NULL UNIQUE,
   `description` VARCHAR(255) NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-CREATE TABLE IF NOT EXISTS `products` (
-  `product_id` VARCHAR(20) NOT NULL PRIMARY KEY,
-  `name` VARCHAR(255) NOT NULL,
-  `category_id` INT UNSIGNED NULL,
-  `price` DECIMAL(18,2) NOT NULL,
-  `cost_price` DECIMAL(18,2) NOT NULL,
-  `stock_quantity` INT NOT NULL DEFAULT 0,
-  `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
-  `image_url` VARCHAR(500) DEFAULT NULL,
-  `brand` VARCHAR(100) DEFAULT NULL,
-  `avg_rating` FLOAT DEFAULT 0,
-  `review_count` INT DEFAULT 0,
-  `sizes` VARCHAR(255) DEFAULT NULL,
-  `colors` VARCHAR(255) DEFAULT NULL,
-  `material` VARCHAR(255) DEFAULT NULL,
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE products (
+    product_id VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    category_id INT UNSIGNED NULL,
+    description TEXT NULL,
+    brand VARCHAR(100),
+    base_price DECIMAL(18,2) NOT NULL,
+    cost_price DECIMAL(18,2) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
 
-  FOREIGN KEY (`category_id`) 
-      REFERENCES `categories`(`category_id`) ON DELETE SET NULL,
+    avg_rating FLOAT DEFAULT 0,
+    review_count INT DEFAULT 0,
 
-  INDEX idx_category_id (`category_id`),
-  CONSTRAINT uq_products_name_brand UNIQUE (`name`, `brand`)
-) ENGINE=InnoDB 
-  DEFAULT CHARSET=utf8mb4 
-  COLLATE=utf8mb4_unicode_ci;
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-CREATE TABLE product_reviews (
-    review_id      INT AUTO_INCREMENT PRIMARY KEY,
-    product_id     VARCHAR(20) NOT NULL,
-    user_id        VARCHAR(20) NOT NULL,
-    rating         INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
-    review_text    TEXT,
-    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    -- ràng buộc khóa ngoại
-    CONSTRAINT fk_review_product FOREIGN KEY (product_id)
-        REFERENCES products(product_id),
-    CONSTRAINT fk_review_user FOREIGN KEY (user_id)
-        REFERENCES users(user_id),
-
-    -- 1 người chỉ được review 1 lần cho 1 sản phẩm
-    CONSTRAINT unique_user_product_review UNIQUE (product_id, user_id)
+    FOREIGN KEY (category_id) REFERENCES categories(category_id) ON DELETE SET NULL
 );
+CREATE TABLE product_variants (
+    variant_id VARCHAR(25) PRIMARY KEY,
+    product_id VARCHAR(20) NOT NULL,
+
+    color VARCHAR(50) NOT NULL,
+    size VARCHAR(50) NOT NULL,
+
+    stock_quantity INT NOT NULL DEFAULT 0,
+    additional_price DECIMAL(18,2) DEFAULT 0,   -- nếu size lớn +20k, optional
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+
+    UNIQUE (product_id, color, size) -- không được trùng color + size
+);
+CREATE TABLE product_images (
+    image_id INT AUTO_INCREMENT PRIMARY KEY,
+    product_id VARCHAR(20) NOT NULL,
+    color VARCHAR(50) NOT NULL,
+    image_url VARCHAR(500) NOT NULL,
+    sort_order INT DEFAULT 0,
+
+    FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+);
+
 
 -- ORDERS: thêm thông tin địa chỉ giao hàng / người nhận để phục vụ đơn online
 CREATE TABLE IF NOT EXISTS `orders` (
@@ -162,16 +162,20 @@ CREATE TABLE IF NOT EXISTS `orders` (
   INDEX idx_orders_delivery_staff (`delivery_staff_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- ORDER_DETAILS
-CREATE TABLE IF NOT EXISTS `order_details` (
-  `order_id` VARCHAR(20) NOT NULL,
-  `product_id` VARCHAR(20) NOT NULL,
-  `quantity` INT NOT NULL,
-  `price_at_order` DECIMAL(18,2) NOT NULL,
-  PRIMARY KEY (`order_id`,`product_id`),
-  FOREIGN KEY (`order_id`) REFERENCES `orders`(`order_id`) ON DELETE CASCADE,
-  FOREIGN KEY (`product_id`) REFERENCES `products`(`product_id`) ON DELETE RESTRICT,
-  INDEX idx_od_product (`product_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS order_details;
+
+CREATE TABLE order_details (
+  order_id VARCHAR(20) NOT NULL,
+  variant_id VARCHAR(25) NOT NULL,
+  quantity INT NOT NULL,
+  price_at_order DECIMAL(18,2) NOT NULL,
+
+  PRIMARY KEY (order_id, variant_id),
+
+  FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
+  FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE RESTRICT
+);
 
 -- STOCK_IN
 CREATE TABLE IF NOT EXISTS `stock_in` (
@@ -185,17 +189,64 @@ CREATE TABLE IF NOT EXISTS `stock_in` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- STOCK_IN_DETAILS
-CREATE TABLE IF NOT EXISTS `stock_in_details` (
-  `stock_in_id` VARCHAR(20) NOT NULL,
-  `product_id` VARCHAR(20) NOT NULL,
-  `quantity` INT NOT NULL,
-  `cost_price` DECIMAL(18,2) NOT NULL,
-  PRIMARY KEY (`stock_in_id`,`product_id`),
-  FOREIGN KEY (`stock_in_id`) REFERENCES `stock_in`(`stock_in_id`) ON DELETE CASCADE,
-  FOREIGN KEY (`product_id`) REFERENCES `products`(`product_id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE stock_in_details (
+    stock_in_id VARCHAR(20) NOT NULL,
+    variant_id VARCHAR(25) NOT NULL,
+    quantity INT NOT NULL,
+    cost_price DECIMAL(18,2) NOT NULL,
+
+    PRIMARY KEY (stock_in_id, variant_id),
+
+    FOREIGN KEY (stock_in_id) REFERENCES stock_in(stock_in_id) ON DELETE CASCADE,
+    FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE RESTRICT
+);
 
 SET FOREIGN_KEY_CHECKS = 1;
+-- tăng khi nhập hàng --
+DELIMITER //
+
+CREATE TRIGGER trg_stock_in_add
+AFTER INSERT ON stock_in_details
+FOR EACH ROW
+BEGIN
+    UPDATE product_variants
+    SET stock_quantity = stock_quantity + NEW.quantity
+    WHERE variant_id = NEW.variant_id;
+END //
+
+DELIMITER ;
+-- giảm khi bán --
+DELIMITER //
+
+CREATE TRIGGER trg_order_details_add
+AFTER INSERT ON order_details
+FOR EACH ROW
+BEGIN
+    UPDATE product_variants
+    SET stock_quantity = stock_quantity - NEW.quantity
+    WHERE variant_id = NEW.variant_id;
+END //
+
+DELIMITER ;
+-- hoàn tồn khi đơn hủy --
+DELIMITER //
+
+CREATE TRIGGER trg_order_cancel_return_stock
+AFTER UPDATE ON orders
+FOR EACH ROW
+BEGIN
+    -- Chỉ thực thi khi đổi trạng thái sang "Đã Hủy"
+    IF NEW.status = 'Đã Hủy' AND OLD.status <> 'Đã Hủy' THEN
+        
+        UPDATE product_variants pv
+        JOIN order_details od ON od.variant_id = pv.variant_id
+        SET pv.stock_quantity = pv.stock_quantity + od.quantity
+        WHERE od.order_id = NEW.order_id;
+
+    END IF;
+END //
+
+DELIMITER ;
 
 -- Dữ liệu mẫu tối thiểu cho roles
 INSERT IGNORE INTO `roles` (`role_id`, `role_name`, `prefix`, `description`) VALUES
@@ -215,255 +266,254 @@ INSERT IGNORE INTO `users` (`user_id`, `username`, `password_hash`, `role_id`, `
 
 -- Customers
 INSERT IGNORE INTO `users` (`user_id`, `username`, `password_hash`, `role_id`, `status`, `must_change_password`) VALUES
-('CUS1', '0900000001', '0900000001', 2, 'Active', TRUE),
-('CUS2', '0900000002', '0900000002', 2, 'Active', TRUE),
-('CUS3', '0900000003', '0900000003', 2, 'Active', TRUE),
-('CUS4', '0900000004', '0900000004', 2, 'Active', TRUE),
-('CUS5', '0900000005', '0900000005', 2, 'Active', TRUE),
-('CUS6', '0900000006', '0900000006', 2, 'Active', TRUE),
-('CUS7', '0900000007', '0900000007', 2, 'Active', TRUE),
-('CUS8', '0900000008', '0900000008', 2, 'Active', TRUE),
-('CUS9', '0900000009', '0900000009', 2, 'Active', TRUE),
-('CUS10', '0900000010', '0900000010', 2, 'Active', TRUE),
-('CUS11', '0900000011', '0900000011', 2, 'Active', TRUE),
-('CUS12', '0900000012', '0900000012', 2, 'Active', TRUE),
-('CUS13', '0900000013', '0900000013', 2, 'Active', TRUE),
-('CUS14', '0900000014', '0900000014', 2, 'Active', TRUE),
-('CUS15', '0900000015', '0900000015', 2, 'Active', TRUE),
-('CUS16', '0900000016', '0900000016', 2, 'Active', TRUE),
-('CUS17', '0900000017', '0900000017', 2, 'Active', TRUE),
-('CUS18', '0900000018', '0900000018', 2, 'Active', TRUE),
-('CUS19', '0900000019', '0900000019', 2, 'Active', TRUE),
-('CUS20', '0900000020', '0900000020', 2, 'Active', TRUE),
-('CUS21', '0900000021', '0900000021', 2, 'Active', TRUE),
-('CUS22', '0900000022', '0900000022', 2, 'Active', TRUE),
-('CUS23', '0900000023', '0900000023', 2, 'Active', TRUE),
-('CUS24', '0900000024', '0900000024', 2, 'Active', TRUE),
-('CUS25', '0900000025', '0900000025', 2, 'Active', TRUE),
-('CUS26', '0900000026', '0900000026', 2, 'Active', TRUE),
-('CUS27', '0900000027', '0900000027', 2, 'Active', TRUE),
-('CUS28', '0900000028', '0900000028', 2, 'Active', TRUE),
-('CUS29', '0900000029', '0900000029', 2, 'Active', TRUE),
-('CUS30', '0900000030', '0900000030', 2, 'Active', TRUE),
-('CUS31', '0900000031', '0900000031', 2, 'Active', TRUE),
-('CUS32', '0900000032', '0900000032', 2, 'Active', TRUE),
-('CUS33', '0900000033', '0900000033', 2, 'Active', TRUE),
-('CUS34', '0900000034', '0900000034', 2, 'Active', TRUE),
-('CUS35', '0900000035', '0900000035', 2, 'Active', TRUE),
-('CUS36', '0900000036', '0900000036', 2, 'Active', TRUE),
-('CUS37', '0900000037', '0900000037', 2, 'Active', TRUE),
-('CUS38', '0900000038', '0900000038', 2, 'Active', TRUE),
-('CUS39', '0900000039', '0900000039', 2, 'Active', TRUE),
-('CUS40', '0900000040', '0900000040', 2, 'Active', TRUE),
-('CUS41', '0900000041', '0900000041', 2, 'Active', TRUE),
-('CUS42', '0900000042', '0900000042', 2, 'Active', TRUE),
-('CUS43', '0900000043', '0900000043', 2, 'Active', TRUE),
-('CUS44', '0900000044', '0900000044', 2, 'Active', TRUE),
-('CUS45', '0900000045', '0900000045', 2, 'Active', TRUE),
-('CUS46', '0900000046', '0900000046', 2, 'Active', TRUE),
-('CUS47', '0900000047', '0900000047', 2, 'Active', TRUE),
-('CUS48', '0900000048', '0900000048', 2, 'Active', TRUE),
-('CUS49', '0900000049', '0900000049', 2, 'Active', TRUE),
-('CUS50', '0900000050', '0900000050', 2, 'Active', TRUE),
-('CUS51', '0900000051', '0900000051', 2, 'Active', TRUE),
-('CUS52', '0900000052', '0900000052', 2, 'Active', TRUE),
-('CUS53', '0900000053', '0900000053', 2, 'Active', TRUE),
-('CUS54', '0900000054', '0900000054', 2, 'Active', TRUE),
-('CUS55', '0900000055', '0900000055', 2, 'Active', TRUE),
-('CUS56', '0900000056', '0900000056', 2, 'Active', TRUE),
-('CUS57', '0900000057', '0900000057', 2, 'Active', TRUE),
-('CUS58', '0900000058', '0900000058', 2, 'Active', TRUE),
-('CUS59', '0900000059', '0900000059', 2, 'Active', TRUE),
-('CUS60', '0900000060', '0900000060', 2, 'Active', TRUE),
-('CUS61', '0900000061', '0900000061', 2, 'Active', TRUE),
-('CUS62', '0900000062', '0900000062', 2, 'Active', TRUE),
-('CUS63', '0900000063', '0900000063', 2, 'Active', TRUE),
-('CUS64', '0900000064', '0900000064', 2, 'Active', TRUE),
-('CUS65', '0900000065', '0900000065', 2, 'Active', TRUE),
-('CUS66', '0900000066', '0900000066', 2, 'Active', TRUE),
-('CUS67', '0900000067', '0900000067', 2, 'Active', TRUE),
-('CUS68', '0900000068', '0900000068', 2, 'Active', TRUE),
-('CUS69', '0900000069', '0900000069', 2, 'Active', TRUE),
-('CUS70', '0900000070', '0900000070', 2, 'Active', TRUE),
-('CUS71', '0900000071', '0900000071', 2, 'Active', TRUE),
-('CUS72', '0900000072', '0900000072', 2, 'Active', TRUE),
-('CUS73', '0900000073', '0900000073', 2, 'Active', TRUE),
-('CUS74', '0900000074', '0900000074', 2, 'Active', TRUE),
-('CUS75', '0900000075', '0900000075', 2, 'Active', TRUE),
-('CUS76', '0900000076', '0900000076', 2, 'Active', TRUE),
-('CUS77', '0900000077', '0900000077', 2, 'Active', TRUE),
-('CUS78', '0900000078', '0900000078', 2, 'Active', TRUE),
-('CUS79', '0900000079', '0900000079', 2, 'Active', TRUE),
-('CUS80', '0900000080', '0900000080', 2, 'Active', TRUE),
-('CUS81', '0900000081', '0900000081', 2, 'Active', TRUE),
-('CUS82', '0900000082', '0900000082', 2, 'Active', TRUE),
-('CUS83', '0900000083', '0900000083', 2, 'Active', TRUE),
-('CUS84', '0900000084', '0900000084', 2, 'Active', TRUE),
-('CUS85', '0900000085', '0900000085', 2, 'Active', TRUE),
-('CUS86', '0900000086', '0900000086', 2, 'Active', TRUE),
-('CUS87', '0900000087', '0900000087', 2, 'Active', TRUE),
-('CUS88', '0900000088', '0900000088', 2, 'Active', TRUE),
-('CUS89', '0900000089', '0900000089', 2, 'Active', TRUE),
-('CUS90', '0900000090', '0900000090', 2, 'Active', TRUE),
-('CUS91', '0900000091', '0900000091', 2, 'Active', TRUE),
-('CUS92', '0900000092', '0900000092', 2, 'Active', TRUE),
-('CUS93', '0900000093', '0900000093', 2, 'Active', TRUE),
-('CUS94', '0900000094', '0900000094', 2, 'Active', TRUE),
-('CUS95', '0900000095', '0900000095', 2, 'Active', TRUE),
-('CUS96', '0900000096', '0900000096', 2, 'Active', TRUE),
-('CUS97', '0900000097', '0900000097', 2, 'Active', TRUE),
-('CUS98', '0900000098', '0900000098', 2, 'Active', TRUE),
-('CUS99', '0900000099', '0900000099', 2, 'Active', TRUE),
-('CUS100', '0900000100', '0900000100', 2, 'Active', TRUE),
-('CUS101', '0900000101', '0900000101', 2, 'Active', TRUE),
-('CUS102', '0900000102', '0900000102', 2, 'Active', TRUE),
-('CUS103', '0900000103', '0900000103', 2, 'Active', TRUE),
-('CUS104', '0900000104', '0900000104', 2, 'Active', TRUE),
-('CUS105', '0900000105', '0900000105', 2, 'Active', TRUE),
-('CUS106', '0900000106', '0900000106', 2, 'Active', TRUE),
-('CUS107', '0900000107', '0900000107', 2, 'Active', TRUE),
-('CUS108', '0900000108', '0900000108', 2, 'Active', TRUE),
-('CUS109', '0900000109', '0900000109', 2, 'Active', TRUE),
-('CUS110', '0900000110', '0900000110', 2, 'Active', TRUE),
-('CUS111', '0900000111', '0900000111', 2, 'Active', TRUE),
-('CUS112', '0900000112', '0900000112', 2, 'Active', TRUE),
-('CUS113', '0900000113', '0900000113', 2, 'Active', TRUE),
-('CUS114', '0900000114', '0900000114', 2, 'Active', TRUE),
-('CUS115', '0900000115', '0900000115', 2, 'Active', TRUE),
-('CUS116', '0900000116', '0900000116', 2, 'Active', TRUE),
-('CUS117', '0900000117', '0900000117', 2, 'Active', TRUE),
-('CUS118', '0900000118', '0900000118', 2, 'Active', TRUE),
-('CUS119', '0900000119', '0900000119', 2, 'Active', TRUE),
-('CUS120', '0900000120', '0900000120', 2, 'Active', TRUE),
-('CUS121', '0900000121', '0900000121', 2, 'Active', TRUE),
-('CUS122', '0900000122', '0900000122', 2, 'Active', TRUE),
-('CUS123', '0900000123', '0900000123', 2, 'Active', TRUE),
-('CUS124', '0900000124', '0900000124', 2, 'Active', TRUE),
-('CUS125', '0900000125', '0900000125', 2, 'Active', TRUE),
-('CUS126', '0900000126', '0900000126', 2, 'Active', TRUE),
-('CUS127', '0900000127', '0900000127', 2, 'Active', TRUE),
-('CUS128', '0900000128', '0900000128', 2, 'Active', TRUE),
-('CUS129', '0900000129', '0900000129', 2, 'Active', TRUE),
-('CUS130', '0900000130', '0900000130', 2, 'Active', TRUE),
-('CUS131', '0900000131', '0900000131', 2, 'Active', TRUE),
-('CUS132', '0900000132', '0900000132', 2, 'Active', TRUE),
-('CUS133', '0900000133', '0900000133', 2, 'Active', TRUE),
-('CUS134', '0900000134', '0900000134', 2, 'Active', TRUE),
-('CUS135', '0900000135', '0900000135', 2, 'Active', TRUE),
-('CUS136', '0900000136', '0900000136', 2, 'Active', TRUE),
-('CUS137', '0900000137', '0900000137', 2, 'Active', TRUE),
-('CUS138', '0900000138', '0900000138', 2, 'Active', TRUE),
-('CUS139', '0900000139', '0900000139', 2, 'Active', TRUE),
-('CUS140', '0900000140', '0900000140', 2, 'Active', TRUE),
-('CUS141', '0900000141', '0900000141', 2, 'Active', TRUE),
-('CUS142', '0900000142', '0900000142', 2, 'Active', TRUE),
-('CUS143', '0900000143', '0900000143', 2, 'Active', TRUE),
-('CUS144', '0900000144', '0900000144', 2, 'Active', TRUE),
-('CUS145', '0900000145', '0900000145', 2, 'Active', TRUE),
-('CUS146', '0900000146', '0900000146', 2, 'Active', TRUE),
-('CUS147', '0900000147', '0900000147', 2, 'Active', TRUE),
-('CUS148', '0900000148', '0900000148', 2, 'Active', TRUE),
-('CUS149', '0900000149', '0900000149', 2, 'Active', TRUE),
-('CUS150', '0900000150', '0900000150', 2, 'Active', TRUE),
-('CUS151', '0900000151', '0900000151', 2, 'Active', TRUE),
-('CUS152', '0900000152', '0900000152', 2, 'Active', TRUE),
-('CUS153', '0900000153', '0900000153', 2, 'Active', TRUE),
-('CUS154', '0900000154', '0900000154', 2, 'Active', TRUE),
-('CUS155', '0900000155', '0900000155', 2, 'Active', TRUE),
-('CUS156', '0900000156', '0900000156', 2, 'Active', TRUE),
-('CUS157', '0900000157', '0900000157', 2, 'Active', TRUE),
-('CUS158', '0900000158', '0900000158', 2, 'Active', TRUE),
-('CUS159', '0900000159', '0900000159', 2, 'Active', TRUE),
-('CUS160', '0900000160', '0900000160', 2, 'Active', TRUE),
-('CUS161', '0900000161', '0900000161', 2, 'Active', TRUE),
-('CUS162', '0900000162', '0900000162', 2, 'Active', TRUE),
-('CUS163', '0900000163', '0900000163', 2, 'Active', TRUE),
-('CUS164', '0900000164', '0900000164', 2, 'Active', TRUE),
-('CUS165', '0900000165', '0900000165', 2, 'Active', TRUE),
-('CUS166', '0900000166', '0900000166', 2, 'Active', TRUE),
-('CUS167', '0900000167', '0900000167', 2, 'Active', TRUE),
-('CUS168', '0900000168', '0900000168', 2, 'Active', TRUE),
-('CUS169', '0900000169', '0900000169', 2, 'Active', TRUE),
-('CUS170', '0900000170', '0900000170', 2, 'Active', TRUE),
-('CUS171', '0900000171', '0900000171', 2, 'Active', TRUE),
-('CUS172', '0900000172', '0900000172', 2, 'Active', TRUE),
-('CUS173', '0900000173', '0900000173', 2, 'Active', TRUE),
-('CUS174', '0900000174', '0900000174', 2, 'Active', TRUE),
-('CUS175', '0900000175', '0900000175', 2, 'Active', TRUE),
-('CUS176', '0900000176', '0900000176', 2, 'Active', TRUE),
-('CUS177', '0900000177', '0900000177', 2, 'Active', TRUE),
-('CUS178', '0900000178', '0900000178', 2, 'Active', TRUE),
-('CUS179', '0900000179', '0900000179', 2, 'Active', TRUE),
-('CUS180', '0900000180', '0900000180', 2, 'Active', TRUE),
-('CUS181', '0900000181', '0900000181', 2, 'Active', TRUE),
-('CUS182', '0900000182', '0900000182', 2, 'Active', TRUE),
-('CUS183', '0900000183', '0900000183', 2, 'Active', TRUE),
-('CUS184', '0900000184', '0900000184', 2, 'Active', TRUE),
-('CUS185', '0900000185', '0900000185', 2, 'Active', TRUE),
-('CUS186', '0900000186', '0900000186', 2, 'Active', TRUE),
-('CUS187', '0900000187', '0900000187', 2, 'Active', TRUE),
-('CUS188', '0900000188', '0900000188', 2, 'Active', TRUE),
-('CUS189', '0900000189', '0900000189', 2, 'Active', TRUE),
-('CUS190', '0900000190', '0900000190', 2, 'Active', TRUE),
-('CUS191', '0900000191', '0900000191', 2, 'Active', TRUE),
-('CUS192', '0900000192', '0900000192', 2, 'Active', TRUE),
-('CUS193', '0900000193', '0900000193', 2, 'Active', TRUE),
-('CUS194', '0900000194', '0900000194', 2, 'Active', TRUE),
-('CUS195', '0900000195', '0900000195', 2, 'Active', TRUE),
-('CUS196', '0900000196', '0900000196', 2, 'Active', TRUE),
-('CUS197', '0900000197', '0900000197', 2, 'Active', TRUE),
-('CUS198', '0900000198', '0900000198', 2, 'Active', TRUE),
-('CUS199', '0900000199', '0900000199', 2, 'Active', TRUE),
-('CUS200', '0900000200', '0900000200', 2, 'Active', TRUE);
-
+('US1', '0900000001', '0900000001', 2, 'Active', TRUE),
+('US2', '0900000002', '0900000002', 2, 'Active', TRUE),
+('US3', '0900000003', '0900000003', 2, 'Active', TRUE),
+('US4', '0900000004', '0900000004', 2, 'Active', TRUE),
+('US5', '0900000005', '0900000005', 2, 'Active', TRUE),
+('US6', '0900000006', '0900000006', 2, 'Active', TRUE),
+('US7', '0900000007', '0900000007', 2, 'Active', TRUE),
+('US8', '0900000008', '0900000008', 2, 'Active', TRUE),
+('US9', '0900000009', '0900000009', 2, 'Active', TRUE),
+('US10', '0900000010', '0900000010', 2, 'Active', TRUE),
+('US11', '0900000011', '0900000011', 2, 'Active', TRUE),
+('US12', '0900000012', '0900000012', 2, 'Active', TRUE),
+('US13', '0900000013', '0900000013', 2, 'Active', TRUE),
+('US14', '0900000014', '0900000014', 2, 'Active', TRUE),
+('US15', '0900000015', '0900000015', 2, 'Active', TRUE),
+('US16', '0900000016', '0900000016', 2, 'Active', TRUE),
+('US17', '0900000017', '0900000017', 2, 'Active', TRUE),
+('US18', '0900000018', '0900000018', 2, 'Active', TRUE),
+('US19', '0900000019', '0900000019', 2, 'Active', TRUE),
+('US20', '0900000020', '0900000020', 2, 'Active', TRUE),
+('US21', '0900000021', '0900000021', 2, 'Active', TRUE),
+('US22', '0900000022', '0900000022', 2, 'Active', TRUE),
+('US23', '0900000023', '0900000023', 2, 'Active', TRUE),
+('US24', '0900000024', '0900000024', 2, 'Active', TRUE),
+('US25', '0900000025', '0900000025', 2, 'Active', TRUE),
+('US26', '0900000026', '0900000026', 2, 'Active', TRUE),
+('US27', '0900000027', '0900000027', 2, 'Active', TRUE),
+('US28', '0900000028', '0900000028', 2, 'Active', TRUE),
+('US29', '0900000029', '0900000029', 2, 'Active', TRUE),
+('US30', '0900000030', '0900000030', 2, 'Active', TRUE),
+('US31', '0900000031', '0900000031', 2, 'Active', TRUE),
+('US32', '0900000032', '0900000032', 2, 'Active', TRUE),
+('US33', '0900000033', '0900000033', 2, 'Active', TRUE),
+('US34', '0900000034', '0900000034', 2, 'Active', TRUE),
+('US35', '0900000035', '0900000035', 2, 'Active', TRUE),
+('US36', '0900000036', '0900000036', 2, 'Active', TRUE),
+('US37', '0900000037', '0900000037', 2, 'Active', TRUE),
+('US38', '0900000038', '0900000038', 2, 'Active', TRUE),
+('US39', '0900000039', '0900000039', 2, 'Active', TRUE),
+('US40', '0900000040', '0900000040', 2, 'Active', TRUE),
+('US41', '0900000041', '0900000041', 2, 'Active', TRUE),
+('US42', '0900000042', '0900000042', 2, 'Active', TRUE),
+('US43', '0900000043', '0900000043', 2, 'Active', TRUE),
+('US44', '0900000044', '0900000044', 2, 'Active', TRUE),
+('US45', '0900000045', '0900000045', 2, 'Active', TRUE),
+('US46', '0900000046', '0900000046', 2, 'Active', TRUE),
+('US47', '0900000047', '0900000047', 2, 'Active', TRUE),
+('US48', '0900000048', '0900000048', 2, 'Active', TRUE),
+('US49', '0900000049', '0900000049', 2, 'Active', TRUE),
+('US50', '0900000050', '0900000050', 2, 'Active', TRUE),
+('US51', '0900000051', '0900000051', 2, 'Active', TRUE),
+('US52', '0900000052', '0900000052', 2, 'Active', TRUE),
+('US53', '0900000053', '0900000053', 2, 'Active', TRUE),
+('US54', '0900000054', '0900000054', 2, 'Active', TRUE),
+('US55', '0900000055', '0900000055', 2, 'Active', TRUE),
+('US56', '0900000056', '0900000056', 2, 'Active', TRUE),
+('US57', '0900000057', '0900000057', 2, 'Active', TRUE),
+('US58', '0900000058', '0900000058', 2, 'Active', TRUE),
+('US59', '0900000059', '0900000059', 2, 'Active', TRUE),
+('US60', '0900000060', '0900000060', 2, 'Active', TRUE),
+('US61', '0900000061', '0900000061', 2, 'Active', TRUE),
+('US62', '0900000062', '0900000062', 2, 'Active', TRUE),
+('US63', '0900000063', '0900000063', 2, 'Active', TRUE),
+('US64', '0900000064', '0900000064', 2, 'Active', TRUE),
+('US65', '0900000065', '0900000065', 2, 'Active', TRUE),
+('US66', '0900000066', '0900000066', 2, 'Active', TRUE),
+('US67', '0900000067', '0900000067', 2, 'Active', TRUE),
+('US68', '0900000068', '0900000068', 2, 'Active', TRUE),
+('US69', '0900000069', '0900000069', 2, 'Active', TRUE),
+('US70', '0900000070', '0900000070', 2, 'Active', TRUE),
+('US71', '0900000071', '0900000071', 2, 'Active', TRUE),
+('US72', '0900000072', '0900000072', 2, 'Active', TRUE),
+('US73', '0900000073', '0900000073', 2, 'Active', TRUE),
+('US74', '0900000074', '0900000074', 2, 'Active', TRUE),
+('US75', '0900000075', '0900000075', 2, 'Active', TRUE),
+('US76', '0900000076', '0900000076', 2, 'Active', TRUE),
+('US77', '0900000077', '0900000077', 2, 'Active', TRUE),
+('US78', '0900000078', '0900000078', 2, 'Active', TRUE),
+('US79', '0900000079', '0900000079', 2, 'Active', TRUE),
+('US80', '0900000080', '0900000080', 2, 'Active', TRUE),
+('US81', '0900000081', '0900000081', 2, 'Active', TRUE),
+('US82', '0900000082', '0900000082', 2, 'Active', TRUE),
+('US83', '0900000083', '0900000083', 2, 'Active', TRUE),
+('US84', '0900000084', '0900000084', 2, 'Active', TRUE),
+('US85', '0900000085', '0900000085', 2, 'Active', TRUE),
+('US86', '0900000086', '0900000086', 2, 'Active', TRUE),
+('US87', '0900000087', '0900000087', 2, 'Active', TRUE),
+('US88', '0900000088', '0900000088', 2, 'Active', TRUE),
+('US89', '0900000089', '0900000089', 2, 'Active', TRUE),
+('US90', '0900000090', '0900000090', 2, 'Active', TRUE),
+('US91', '0900000091', '0900000091', 2, 'Active', TRUE),
+('US92', '0900000092', '0900000092', 2, 'Active', TRUE),
+('US93', '0900000093', '0900000093', 2, 'Active', TRUE),
+('US94', '0900000094', '0900000094', 2, 'Active', TRUE),
+('US95', '0900000095', '0900000095', 2, 'Active', TRUE),
+('US96', '0900000096', '0900000096', 2, 'Active', TRUE),
+('US97', '0900000097', '0900000097', 2, 'Active', TRUE),
+('US98', '0900000098', '0900000098', 2, 'Active', TRUE),
+('US99', '0900000099', '0900000099', 2, 'Active', TRUE),
+('US100', '0900000100', '0900000100', 2, 'Active', TRUE),
+('US101', '0900000101', '0900000101', 2, 'Active', TRUE),
+('US102', '0900000102', '0900000102', 2, 'Active', TRUE),
+('US103', '0900000103', '0900000103', 2, 'Active', TRUE),
+('US104', '0900000104', '0900000104', 2, 'Active', TRUE),
+('US105', '0900000105', '0900000105', 2, 'Active', TRUE),
+('US106', '0900000106', '0900000106', 2, 'Active', TRUE),
+('US107', '0900000107', '0900000107', 2, 'Active', TRUE),
+('US108', '0900000108', '0900000108', 2, 'Active', TRUE),
+('US109', '0900000109', '0900000109', 2, 'Active', TRUE),
+('US110', '0900000110', '0900000110', 2, 'Active', TRUE),
+('US111', '0900000111', '0900000111', 2, 'Active', TRUE),
+('US112', '0900000112', '0900000112', 2, 'Active', TRUE),
+('US113', '0900000113', '0900000113', 2, 'Active', TRUE),
+('US114', '0900000114', '0900000114', 2, 'Active', TRUE),
+('US115', '0900000115', '0900000115', 2, 'Active', TRUE),
+('US116', '0900000116', '0900000116', 2, 'Active', TRUE),
+('US117', '0900000117', '0900000117', 2, 'Active', TRUE),
+('US118', '0900000118', '0900000118', 2, 'Active', TRUE),
+('US119', '0900000119', '0900000119', 2, 'Active', TRUE),
+('US120', '0900000120', '0900000120', 2, 'Active', TRUE),
+('US121', '0900000121', '0900000121', 2, 'Active', TRUE),
+('US122', '0900000122', '0900000122', 2, 'Active', TRUE),
+('US123', '0900000123', '0900000123', 2, 'Active', TRUE),
+('US124', '0900000124', '0900000124', 2, 'Active', TRUE),
+('US125', '0900000125', '0900000125', 2, 'Active', TRUE),
+('US126', '0900000126', '0900000126', 2, 'Active', TRUE),
+('US127', '0900000127', '0900000127', 2, 'Active', TRUE),
+('US128', '0900000128', '0900000128', 2, 'Active', TRUE),
+('US129', '0900000129', '0900000129', 2, 'Active', TRUE),
+('US130', '0900000130', '0900000130', 2, 'Active', TRUE),
+('US131', '0900000131', '0900000131', 2, 'Active', TRUE),
+('US132', '0900000132', '0900000132', 2, 'Active', TRUE),
+('US133', '0900000133', '0900000133', 2, 'Active', TRUE),
+('US134', '0900000134', '0900000134', 2, 'Active', TRUE),
+('US135', '0900000135', '0900000135', 2, 'Active', TRUE),
+('US136', '0900000136', '0900000136', 2, 'Active', TRUE),
+('US137', '0900000137', '0900000137', 2, 'Active', TRUE),
+('US138', '0900000138', '0900000138', 2, 'Active', TRUE),
+('US139', '0900000139', '0900000139', 2, 'Active', TRUE),
+('US140', '0900000140', '0900000140', 2, 'Active', TRUE),
+('US141', '0900000141', '0900000141', 2, 'Active', TRUE),
+('US142', '0900000142', '0900000142', 2, 'Active', TRUE),
+('US143', '0900000143', '0900000143', 2, 'Active', TRUE),
+('US144', '0900000144', '0900000144', 2, 'Active', TRUE),
+('US145', '0900000145', '0900000145', 2, 'Active', TRUE),
+('US146', '0900000146', '0900000146', 2, 'Active', TRUE),
+('US147', '0900000147', '0900000147', 2, 'Active', TRUE),
+('US148', '0900000148', '0900000148', 2, 'Active', TRUE),
+('US149', '0900000149', '0900000149', 2, 'Active', TRUE),
+('US150', '0900000150', '0900000150', 2, 'Active', TRUE),
+('US151', '0900000151', '0900000151', 2, 'Active', TRUE),
+('US152', '0900000152', '0900000152', 2, 'Active', TRUE),
+('US153', '0900000153', '0900000153', 2, 'Active', TRUE),
+('US154', '0900000154', '0900000154', 2, 'Active', TRUE),
+('US155', '0900000155', '0900000155', 2, 'Active', TRUE),
+('US156', '0900000156', '0900000156', 2, 'Active', TRUE),
+('US157', '0900000157', '0900000157', 2, 'Active', TRUE),
+('US158', '0900000158', '0900000158', 2, 'Active', TRUE),
+('US159', '0900000159', '0900000159', 2, 'Active', TRUE),
+('US160', '0900000160', '0900000160', 2, 'Active', TRUE),
+('US161', '0900000161', '0900000161', 2, 'Active', TRUE),
+('US162', '0900000162', '0900000162', 2, 'Active', TRUE),
+('US163', '0900000163', '0900000163', 2, 'Active', TRUE),
+('US164', '0900000164', '0900000164', 2, 'Active', TRUE),
+('US165', '0900000165', '0900000165', 2, 'Active', TRUE),
+('US166', '0900000166', '0900000166', 2, 'Active', TRUE),
+('US167', '0900000167', '0900000167', 2, 'Active', TRUE),
+('US168', '0900000168', '0900000168', 2, 'Active', TRUE),
+('US169', '0900000169', '0900000169', 2, 'Active', TRUE),
+('US170', '0900000170', '0900000170', 2, 'Active', TRUE),
+('US171', '0900000171', '0900000171', 2, 'Active', TRUE),
+('US172', '0900000172', '0900000172', 2, 'Active', TRUE),
+('US173', '0900000173', '0900000173', 2, 'Active', TRUE),
+('US174', '0900000174', '0900000174', 2, 'Active', TRUE),
+('US175', '0900000175', '0900000175', 2, 'Active', TRUE),
+('US176', '0900000176', '0900000176', 2, 'Active', TRUE),
+('US177', '0900000177', '0900000177', 2, 'Active', TRUE),
+('US178', '0900000178', '0900000178', 2, 'Active', TRUE),
+('US179', '0900000179', '0900000179', 2, 'Active', TRUE),
+('US180', '0900000180', '0900000180', 2, 'Active', TRUE),
+('US181', '0900000181', '0900000181', 2, 'Active', TRUE),
+('US182', '0900000182', '0900000182', 2, 'Active', TRUE),
+('US183', '0900000183', '0900000183', 2, 'Active', TRUE),
+('US184', '0900000184', '0900000184', 2, 'Active', TRUE),
+('US185', '0900000185', '0900000185', 2, 'Active', TRUE),
+('US186', '0900000186', '0900000186', 2, 'Active', TRUE),
+('US187', '0900000187', '0900000187', 2, 'Active', TRUE),
+('US188', '0900000188', '0900000188', 2, 'Active', TRUE),
+('US189', '0900000189', '0900000189', 2, 'Active', TRUE),
+('US190', '0900000190', '0900000190', 2, 'Active', TRUE),
+('US191', '0900000191', '0900000191', 2, 'Active', TRUE),
+('US192', '0900000192', '0900000192', 2, 'Active', TRUE),
+('US193', '0900000193', '0900000193', 2, 'Active', TRUE),
+('US194', '0900000194', '0900000194', 2, 'Active', TRUE),
+('US195', '0900000195', '0900000195', 2, 'Active', TRUE),
+('US196', '0900000196', '0900000196', 2, 'Active', TRUE),
+('US197', '0900000197', '0900000197', 2, 'Active', TRUE),
+('US198', '0900000198', '0900000198', 2, 'Active', TRUE),
+('US199', '0900000199', '0900000199', 2, 'Active', TRUE),
+('US200', '0900000200', '0900000200', 2, 'Active', TRUE);
 -- Warehouse
 INSERT IGNORE INTO `users` (`user_id`, `username`, `password_hash`, `role_id`, `status`, `must_change_password`) VALUES
-('WH01', 'WH01', 'WH01', 3, 'Active', TRUE),
-('WH02', 'WH02', 'WH02', 3, 'Active', TRUE),
-('WH03', 'WH03', 'WH03', 3, 'Active', TRUE);
+('US201', 'WH01', 'WH01', 3, 'Active', TRUE),
+('US202', 'WH02', 'WH02', 3, 'Active', TRUE),
+('US203', 'WH03', 'WH03', 3, 'Active', TRUE);
 
 -- Sales
 INSERT IGNORE INTO `users` (`user_id`, `username`, `password_hash`, `role_id`, `status`, `must_change_password`) VALUES
-('SALE1', 'SALE1', 'SALE1', 4, 'Active', TRUE),
-('SALE2', 'SALE2', 'SALE2', 4, 'Active', TRUE),
-('SALE3', 'SALE3', 'SALE3', 4, 'Active', TRUE);
+('US204', 'SALE1', 'SALE1', 4, 'Active', TRUE),
+('US205', 'SALE2', 'SALE2', 4, 'Active', TRUE),
+('US206', 'SALE3', 'SALE3', 4, 'Active', TRUE);
 
 -- Online Sales
 INSERT IGNORE INTO `users` (`user_id`, `username`, `password_hash`, `role_id`, `status`, `must_change_password`) VALUES
-('OS01', 'OS01', 'OS01', 5, 'Active', TRUE),
-('OS02', 'OS02', 'OS02', 5, 'Active', TRUE),
-('OS03', 'OS03', 'OS03', 5, 'Active', TRUE);
+('US207', 'OS01', 'OS01', 5, 'Active', TRUE),
+('US208', 'OS02', 'OS02', 5, 'Active', TRUE),
+('US209', 'OS03', 'OS03', 5, 'Active', TRUE);
 
 -- Shipper
 INSERT IGNORE INTO `users` (`user_id`, `username`, `password_hash`, `role_id`, `status`, `must_change_password`) VALUES
-('SHIP01', 'SHIP01', 'SHIP01', 6, 'Active', TRUE),
-('SHIP02', 'SHIP02', 'SHIP02', 6, 'Active', TRUE),
-('SHIP03', 'SHIP03', 'SHIP03', 6, 'Active', TRUE);
+('US210', 'SHIP01', 'SHIP01', 6, 'Active', TRUE),
+('US211', 'SHIP02', 'SHIP02', 6, 'Active', TRUE),
+('US212', 'SHIP03', 'SHIP03', 6, 'Active', TRUE);
 
 INSERT IGNORE INTO `employees`
 (employee_id, user_id, full_name, email, phone, date_of_birth, address, start_date, employee_type, department, base_salary, commission_rate)
 VALUES
 -- Warehouse
-('WH01', 'WH01', 'Phạm Văn Hùng',   'wh01@store.com', '0901000001', '1990-01-01', 'Hà Nội', '2024-08-01', 'Full-time', 'Warehouse', 8000000, 0.0000),
-('WH02', 'WH02', 'Đỗ Thị Lan',      'wh02@store.com', '0901000002', '1991-02-02', 'Hà Nội', '2024-08-01', 'Full-time', 'Warehouse', 8000000, 0.0000),
-('WH03', 'WH03', 'Nguyễn Văn Tuấn','wh03@store.com', '0901000003', '1992-03-03', 'Hà Nội', '2024-08-01', 'Full-time', 'Warehouse', 8000000, 0.0000),
+('WH01', 'US201', 'Phạm Văn Hùng',   'wh01@store.com', '0901000001', '1990-01-01', 'Hà Nội', '2024-08-01', 'Full-time', 'Warehouse', 8000000, 0.0000),
+('WH02', 'US202', 'Đỗ Thị Lan',      'wh02@store.com', '0901000002', '1991-02-02', 'Hà Nội', '2024-08-01', 'Full-time', 'Warehouse', 8000000, 0.0000),
+('WH03', 'US203', 'Nguyễn Văn Tuấn','wh03@store.com', '0901000003', '1992-03-03', 'Hà Nội', '2024-08-01', 'Full-time', 'Warehouse', 8000000, 0.0000),
 
 -- Sales
-('SALE1', 'SALE1', 'Lê Thị Ngọc Anh', 'sa01@store.com', '0902000001', '1990-04-01', 'Hà Nội', '2024-08-01', 'Full-time', 'Sales', 7000000, 0.0500),
-('SALE2', 'SALE2', 'Trần Văn Minh',   'sa02@store.com', '0902000002', '1991-05-02', 'Hà Nội', '2024-08-01', 'Full-time', 'Sales', 7000000, 0.0500),
-('SALE3', 'SALE3', 'Phạm Thị Hương',  'sa03@store.com', '0902000003', '1992-06-03', 'Hà Nội', '2024-08-01', 'Full-time', 'Sales', 7000000, 0.0500),
+('SALE1', 'US204', 'Lê Thị Ngọc Anh', 'sa01@store.com', '0902000001', '1990-04-01', 'Hà Nội', '2024-08-01', 'Full-time', 'Sales', 7000000, 0.0500),
+('SALE2', 'US205', 'Trần Văn Minh',   'sa02@store.com', '0902000002', '1991-05-02', 'Hà Nội', '2024-08-01', 'Full-time', 'Sales', 7000000, 0.0500),
+('SALE3', 'US206', 'Phạm Thị Hương',  'sa03@store.com', '0902000003', '1992-06-03', 'Hà Nội', '2024-08-01', 'Full-time', 'Sales', 7000000, 0.0500),
 
 
 -- Online Sales
-('OS01', 'OS01', 'Nguyễn Văn Dũng', 'os01@store.com', '0903000001', '1990-07-01', 'Hà Nội', '2024-08-01', 'Full-time', 'Online Sales', 7000000, 0.0500),
-('OS02', 'OS02', 'Lê Thị Thu Trang','os02@store.com', '0903000002', '1991-08-02', 'Hà Nội', '2024-08-01', 'Full-time', 'Online Sales', 7000000, 0.0500),
-('OS03', 'OS03', 'Trần Văn Khánh',  'os03@store.com', '0903000003', '1992-09-03', 'Hà Nội', '2024-08-01', 'Full-time', 'Online Sales', 7000000, 0.0500),
+('OS01', 'US207', 'Nguyễn Văn Dũng', 'os01@store.com', '0903000001', '1990-07-01', 'Hà Nội', '2024-08-01', 'Full-time', 'Online Sales', 7000000, 0.0500),
+('OS02', 'US208', 'Lê Thị Thu Trang','os02@store.com', '0903000002', '1991-08-02', 'Hà Nội', '2024-08-01', 'Full-time', 'Online Sales', 7000000, 0.0500),
+('OS03', 'US209', 'Trần Văn Khánh',  'os03@store.com', '0903000003', '1992-09-03', 'Hà Nội', '2024-08-01', 'Full-time', 'Online Sales', 7000000, 0.0500),
 
 
 -- Shipper
-('SHIP01', 'SHIP01', 'Nguyễn Văn Hoàng', 'ship01@store.com', '0904000001', '1990-10-01', 'Hà Nội', '2024-08-01', 'Full-time', 'Shipper', 6000000, 0.0000),
-('SHIP02', 'SHIP02', 'Lê Thị Kim Oanh',  'ship02@store.com', '0904000002', '1991-11-02', 'Hà Nội', '2024-08-01', 'Full-time', 'Shipper', 6000000, 0.0000),
-('SHIP03', 'SHIP03', 'Trần Văn Phúc',    'ship03@store.com', '0904000003', '1992-12-03', 'Hà Nội', '2024-08-01', 'Full-time', 'Shipper', 6000000, 0.0000);
+('SHIP01', 'US210', 'Nguyễn Văn Hoàng', 'ship01@store.com', '0904000001', '1990-10-01', 'Hà Nội', '2024-08-01', 'Full-time', 'Shipper', 6000000, 0.0000),
+('SHIP02', 'US211', 'Lê Thị Kim Oanh',  'ship02@store.com', '0904000002', '1991-11-02', 'Hà Nội', '2024-08-01', 'Full-time', 'Shipper', 6000000, 0.0000),
+('SHIP03', 'US212', 'Trần Văn Phúc',    'ship03@store.com', '0904000003', '1992-12-03', 'Hà Nội', '2024-08-01', 'Full-time', 'Shipper', 6000000, 0.0000);
 
 INSERT INTO `salaries` 
 (salary_id, employee_id, month_year, base_salary, sales_commission, bonus, deductions, paid_at, paid_status)
@@ -709,1365 +759,1133 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 
 -- 1. Chèn dữ liệu bảng STOCK_IN (Phiếu nhập kho)
-INSERT INTO stock_in (stock_in_id, supplier_name, import_date, total_cost, user_id)
-VALUES
--- 08/2024
-('SI0001','Công ty A','2024-08-01 09:00:00',1200000,'WH01'),
-('SI0002','Công ty B','2024-08-10 10:00:00',950000,'WH02'),
-('SI0003','Công ty  C','2024-08-20 08:30:00',1500000,'WH03'),
+INSERT INTO stock_in (stock_in_id, supplier_name, import_date, total_cost, user_id) VALUES
+-- 08/2024 (Nhập tồn đầu kỳ lớn)
+('SI0001','Công ty Thời Trang A',   '2024-08-01 09:00:00', 250000000, 'WH01'),
+('SI0002','Công ty May Mặc B',      '2024-08-10 10:00:00', 380000000, 'WH02'),
+('SI0003','Công ty Giày C',         '2024-08-20 08:30:00', 450000000, 'WH03'),
+
 -- 09/2024
-('SI0004','Công ty  D','2024-09-01 09:00:00',800000,'WH01'),
-('SI0005','Công ty  E','2024-09-10 10:00:00',1100000,'WH02'),
-('SI0006','Công ty  F','2024-09-20 08:30:00',1000000,'WH03'),
--- 10/2024
-('SI0007','Công ty  G','2024-10-01 09:00:00',950000,'WH01'),
-('SI0008','Công ty  H','2024-10-10 10:00:00',1200000,'WH02'),
-('SI0009','Công ty I','2024-10-20 08:30:00',800000,'WH03'),
+('SI0004','Công ty D',              '2024-09-01 09:00:00', 180000000, 'WH01'),
+('SI0005','Công ty E',              '2024-09-10 10:00:00', 150000000, 'WH02'),
+('SI0006','Công ty F',              '2024-09-20 08:30:00', 220000000, 'WH03'),
+
+-- 10/2024 (Chuẩn bị hàng cho mùa sale cuối năm)
+('SI0007','Công ty G',              '2024-10-01 09:00:00', 300000000, 'WH01'),
+('SI0008','Công ty H',              '2024-10-10 10:00:00', 280000000, 'WH02'),
+('SI0009','Công ty I',              '2024-10-20 08:30:00', 190000000, 'WH03'),
+
 -- 11/2024
-('SI0010','Công ty  J','2024-11-01 09:00:00',1800000,'WH01'),
-('SI0011','Công ty  A','2024-11-10 10:00:00',1200000,'WH02'),
-('SI0012','Công ty  B','2024-11-20 08:30:00',950000,'WH03'),
+('SI0010','Công ty J',              '2024-11-01 09:00:00', 150000000, 'WH01'),
+('SI0011','Công ty A',              '2024-11-10 10:00:00', 200000000, 'WH02'),
+('SI0012','Công ty B',              '2024-11-20 08:30:00', 120000000, 'WH03'),
+
 -- 12/2024
-('SI0013','Công ty  C','2024-12-01 09:00:00',1500000,'WH01'),
-('SI0014','Công ty  D','2024-12-10 10:00:00',800000,'WH02'),
-('SI0015','Công ty Sữa E','2024-12-20 08:30:00',1100000,'WH03'),
+('SI0013','Công ty C',              '2024-12-01 09:00:00', 180000000, 'WH01'),
+('SI0014','Công ty D',              '2024-12-10 10:00:00', 450000000, 'WH02'), -- Nhập nhiều nước hoa
+('SI0015','Công ty Sữa E',          '2024-12-20 08:30:00', 110000000, 'WH03'),
+
 -- 01/2025
-('SI0016','Công ty  F','2025-01-01 09:00:00',1000000,'WH01'),
-('SI0017','Công ty G','2025-01-10 10:00:00',950000,'WH02'),
-('SI0018','Công ty  H','2025-01-20 08:30:00',1200000,'WH03'),
+('SI0016','Công ty F',              '2025-01-01 09:00:00', 250000000, 'WH01'),
+('SI0017','Công ty G',              '2025-01-10 10:00:00', 150000000, 'WH02'),
+('SI0018','Công ty H',              '2025-01-20 08:30:00', 320000000, 'WH03'),
+
 -- 02/2025
-('SI0019','Công ty I','2025-02-01 09:00:00',800000,'WH01'),
-('SI0020','Công ty  J','2025-02-10 10:00:00',1800000,'WH02'),
-('SI0021','Công ty  A','2025-02-20 08:30:00',1200000,'WH03'),
+('SI0019','Công ty I',              '2025-02-01 09:00:00', 140000000, 'WH01'),
+('SI0020','Công ty J',              '2025-02-10 10:00:00', 280000000, 'WH02'),
+('SI0021','Công ty A',              '2025-02-20 08:30:00', 190000000, 'WH03'),
+
 -- 03/2025
-('SI0022','Công ty  B','2025-03-01 09:00:00',950000,'WH01'),
-('SI0023','Công ty  C','2025-03-10 10:00:00',1500000,'WH02'),
-('SI0024','Công ty  D','2025-03-20 08:30:00',800000,'WH03'),
+('SI0022','Công ty B',              '2025-03-01 09:00:00', 210000000, 'WH01'),
+('SI0023','Công ty C',              '2025-03-10 10:00:00', 160000000, 'WH02'),
+('SI0024','Công ty D',              '2025-03-20 08:30:00', 180000000, 'WH03'),
+
 -- 04/2025
-('SI0025','Công ty  E','2025-04-01 09:00:00',1100000,'WH01'),
-('SI0026','Công ty  F','2025-04-10 10:00:00',1000000,'WH02'),
-('SI0027','Công ty  G','2025-04-20 08:30:00',950000,'WH03'),
+('SI0025','Công ty E',              '2025-04-01 09:00:00', 150000000, 'WH01'),
+('SI0026','Công ty F',              '2025-04-10 10:00:00', 200000000, 'WH02'),
+('SI0027','Công ty G',              '2025-04-20 08:30:00', 170000000, 'WH03'),
+
 -- 05/2025
-('SI0028','Công ty  H','2025-05-01 09:00:00',1200000,'WH01'),
-('SI0029','Công ty I','2025-05-10 10:00:00',800000,'WH02'),
-('SI0030','Công ty  J','2025-05-20 08:30:00',1800000,'WH03'),
+('SI0028','Công ty H',              '2025-05-01 09:00:00', 220000000, 'WH01'),
+('SI0029','Công ty I',              '2025-05-10 10:00:00', 350000000, 'WH02'),
+('SI0030','Công ty J',              '2025-05-20 08:30:00', 180000000, 'WH03'),
+
 -- 06/2025
-('SI0031','Công ty  A','2025-06-01 09:00:00',1200000,'WH01'),
-('SI0032','Công ty  B','2025-06-10 10:00:00',950000,'WH02'),
-('SI0033','Công ty  C','2025-06-20 08:30:00',1500000,'WH03'),
+('SI0031','Công ty A',              '2025-06-01 09:00:00', 160000000, 'WH01'),
+('SI0032','Công ty B',              '2025-06-10 10:00:00', 190000000, 'WH02'),
+('SI0033','Công ty C',              '2025-06-20 08:30:00', 210000000, 'WH03'),
+
 -- 07/2025
-('SI0034','Công ty  D','2025-07-01 09:00:00',800000,'WH01'),
-('SI0035','Công ty  E','2025-07-10 10:00:00',1100000,'WH02'),
-('SI0036','Công ty  F','2025-07-20 08:30:00',1000000,'WH03'),
+('SI0034','Công ty D',              '2025-07-01 09:00:00', 140000000, 'WH01'),
+('SI0035','Công ty E',              '2025-07-10 10:00:00', 150000000, 'WH02'),
+('SI0036','Công ty F',              '2025-07-20 08:30:00', 300000000, 'WH03'),
+
 -- 08/2025
-('SI0037','Công ty  G','2025-08-01 09:00:00',950000,'WH01'),
-('SI0038','Công ty  H','2025-08-10 10:00:00',1200000,'WH02'),
-('SI0039','Công ty I','2025-08-20 08:30:00',800000,'WH03'),
+('SI0037','Công ty G',              '2025-08-01 09:00:00', 280000000, 'WH01'),
+('SI0038','Công ty H',              '2025-08-10 10:00:00', 220000000, 'WH02'),
+('SI0039','Công ty I',              '2025-08-20 08:30:00', 130000000, 'WH03'),
+
 -- 09/2025
-('SI0040','Công ty  J','2025-09-01 09:00:00',1800000,'WH01'),
-('SI0041','Công ty  A','2025-09-10 10:00:00',1200000,'WH02'),
-('SI0042','Công ty Rau củ B','2025-09-20 08:30:00',950000,'WH03'),
+('SI0040','Công ty J',              '2025-09-01 09:00:00', 190000000, 'WH01'),
+('SI0041','Công ty A',              '2025-09-10 10:00:00', 250000000, 'WH02'),
+('SI0042','Công ty Rau củ B',       '2025-09-20 08:30:00', 160000000, 'WH03'),
+
 -- 10/2025
-('SI0043','Công ty  C','2025-10-01 09:00:00',1500000,'WH01'),
-('SI0044','Công ty  D','2025-10-10 10:00:00',800000,'WH02'),
-('SI0045','Công ty E','2025-10-20 08:30:00',1100000,'WH03'),
+('SI0043','Công ty C',              '2025-10-01 09:00:00', 210000000, 'WH01'),
+('SI0044','Công ty D',              '2025-10-10 10:00:00', 180000000, 'WH02'),
+('SI0045','Công ty E',              '2025-10-20 08:30:00', 220000000, 'WH03'),
+
 -- 11/2025
-('SI0046','Công ty  F','2025-11-01 09:00:00',1000000,'WH01'),
-('SI0047','Công ty G','2025-11-10 10:00:00',950000,'WH02'),
-('SI0048','Công ty  H','2025-11-20 08:30:00',1200000,'WH03')
-;
+('SI0046','Công ty F',              '2025-11-01 09:00:00', 200000000, 'WH01'),
+('SI0047','Công ty G',              '2025-11-10 10:00:00', 150000000, 'WH02'),
+('SI0048','Công ty H',              '2025-11-20 08:30:00', 400000000, 'WH03');
 -- 2. Chèn dữ liệu bảng STOCK_IN_DETAILS (Chi tiết nhập kho)
 -- Mỗi phiếu nhập 5 sản phẩm, bạn có thể thay product_id phù hợp với bảng products
 -- ============================
 -- BẢNG STOCK_IN_DETAILS (FULL 144 DÒNG)
 -- ============================
 
-INSERT INTO stock_in_details (stock_in_id, product_id, quantity, cost_price)
-VALUES
--- SI0001
-('SI0001','P0001',10,90000),
-('SI0001','P0002',15,70000),
-('SI0001','P0003',8,120000),
--- SI0002
-('SI0002','P0004',12,140000),
-('SI0002','P0005',30,2500),
-('SI0002','P0006',5,90000),
--- SI0003
-('SI0003','P0007',8,75000),
-('SI0003','P0008',12,18000),
-('SI0003','P0009',10,60000),
+INSERT INTO stock_in_details (stock_in_id, variant_id, quantity, cost_price) VALUES
+-- SI0001 (Thời trang)
+('SI0001','V001_1', 200, 250000), ('SI0001','V002_1', 500, 80000), ('SI0001','V003_1', 300, 350000),
+-- SI0002 (Blazer & Váy)
+('SI0002','V004_1', 300, 100000), ('SI0002','V005_1', 600, 500000), ('SI0002','V006_1', 200, 200000),
+-- SI0003 (Giày)
+('SI0003','V007_1', 300, 280000), ('SI0003','V008_1', 400, 300000), ('SI0003','V009_1', 500, 150000),
 -- SI0004
-('SI0004','P0010',5,150000),
-('SI0004','P0011',20,10000),
-('SI0004','P0012',25,8000),
+('SI0004','V010_1', 100, 450000), ('SI0004','V011_1', 300, 150000), ('SI0004','V012_1', 300, 100000),
 -- SI0005
-('SI0005','P0013',15,7000),
-('SI0005','P0014',18,12000),
-('SI0005','P0015',10,15000),
+('SI0005','V013_1', 400, 70000),  ('SI0005','V014_1', 400, 200000), ('SI0005','V015_1', 500, 50000),
 -- SI0006
-('SI0006','P0016',8,25000),
-('SI0006','P0017',12,20000),
-('SI0006','P0018',10,28000),
+('SI0006','V016_1', 200, 280000), ('SI0006','V017_1', 200, 400000), ('SI0006','V018_1', 100, 800000),
 -- SI0007
-('SI0007','P0019',20,9000),
-('SI0007','P0020',15,12000),
-('SI0007','P0021',10,7000),
+('SI0007','V019_1', 300, 300000), ('SI0007','V020_1', 300, 200000), ('SI0007','V021_1', 300, 400000),
 -- SI0008
-('SI0008','P0022',12,8000),
-('SI0008','P0023',15,10000),
-('SI0008','P0024',10,15000),
+('SI0008','V022_1', 300, 400000), ('SI0008','V023_1', 200, 500000), ('SI0008','V024_1', 200, 150000),
 -- SI0009
-('SI0009','P0025',5,40000),
-('SI0009','P0026',8,22000),
-('SI0009','P0027',12,18000),
+('SI0009','V025_1', 100, 250000), ('SI0009','V026_1', 500, 100000), ('SI0009','V027_1', 500, 200000),
 -- SI0010
-('SI0010','P0028',10,30000),
-('SI0010','P0029',5,45000),
-('SI0010','P0030',12,15000),
+('SI0010','V028_1', 300, 150000), ('SI0010','V029_1', 200, 250000), ('SI0010','V030_1', 300, 110000),
 -- SI0011
-('SI0011','P0031',10,10000),
-('SI0011','P0032',12,3000),
-('SI0011','P0033',15,7000),
+('SI0011','V031_1', 400, 200000), ('SI0011','V032_1', 200, 600000), ('SI0011','V033_1', 200, 200000),
 -- SI0012
-('SI0012','P0034',8,20000),
-('SI0012','P0035',5,18000),
-('SI0012','P0036',10,15000),
+('SI0012','V034_1', 200, 300000), ('SI0012','V035_1', 300, 180000), ('SI0012','V036_1', 200, 140000),
 -- SI0013
-('SI0013','P0037',12,15000),
-('SI0013','P0038',10,8000),
-('SI0013','P0039',20,7000),
--- SI0014
-('SI0014','P0040',5,25000),
-('SI0014','P0041',10,15000),
-('SI0014','P0042',12,10000),
+('SI0013','V037_1', 300, 160000), ('SI0013','V038_1', 400, 110000), ('SI0013','V039_1', 500, 90000),
+-- SI0014 (Nước hoa)
+('SI0014','V040_1', 100, 80000),  ('SI0014','V041_1', 100, 1800000), ('SI0014','V042_1', 100, 2500000),
 -- SI0015
-('SI0015','P0043',8,40000),
-('SI0015','P0044',5,18000),
-('SI0015','P0045',12,15000),
+('SI0015','V043_1', 200, 180000), ('SI0015','V044_1', 500, 80000),  ('SI0015','V045_1', 200, 200000),
 -- SI0016
-('SI0016','P0046',10,30000),
-('SI0016','P0047',12,10000),
-('SI0016','P0048',8,22000),
+('SI0016','V046_1', 300, 150000), ('SI0016','V047_1', 500, 80000),  ('SI0016','V048_1', 300, 250000),
 -- SI0017
-('SI0017','P0049',5,25000),
-('SI0017','P0050',10,30000),
-('SI0017','P0051',12,10000),
+('SI0017','V049_1', 300, 60000),  ('SI0017','V050_1', 200, 300000), ('SI0017','V051_1', 300, 200000),
 -- SI0018
-('SI0018','P0052',8,7000),
-('SI0018','P0053',15,15000),
-('SI0018','P0054',10,20000),
+('SI0018','V052_1', 100, 1000000), ('SI0018','V053_1', 300, 60000), ('SI0018','V054_1', 300, 100000),
 -- SI0019
-('SI0019','P0055',12,12000),
-('SI0019','P0056',8,15000),
-('SI0019','P0057',10,10000),
+('SI0019','V055_1', 200, 150000), ('SI0019','V056_1', 500, 40000),  ('SI0019','V057_1', 300, 280000),
 -- SI0020
-('SI0020','P0058',5,20000),
-('SI0020','P0059',12,22000),
-('SI0020','P0060',8,10000),
+('SI0020','V058_1', 200, 220000), ('SI0020','V059_1', 100, 500000), ('SI0020','V060_1', 200, 800000),
 -- SI0021
-('SI0021','P0061',10,15000),
-('SI0021','P0062',12,8000),
-('SI0021','P0063',8,10000),
+('SI0021','V061_1', 200, 350000), ('SI0021','V062_1', 200, 200000), ('SI0021','V063_1', 100, 600000),
 -- SI0022
-('SI0022','P0064',5,25000),
-('SI0022','P0065',10,20000),
-('SI0022','P0066',12,15000),
+('SI0022','V064_1', 200, 250000), ('SI0022','V065_1', 200, 400000), ('SI0022','V066_1', 100, 600000),
 -- SI0023
-('SI0023','P0067',8,7000),
-('SI0023','P0068',10,10000),
-('SI0023','P0069',12,12000),
+('SI0023','V067_1', 500, 20000),  ('SI0023','V068_1', 500, 70000),  ('SI0023','V069_1', 300, 200000),
 -- SI0024
-('SI0024','P0070',8,9000),
-('SI0024','P0071',5,25000),
-('SI0024','P0072',10,28000),
+('SI0024','V070_1', 200, 180000), ('SI0024','V071_1', 200, 250000), ('SI0024','V072_1', 200, 300000),
 -- SI0025
-('SI0025','P0073',12,15000),
-('SI0025','P0074',8,20000),
-('SI0025','P0075',10,10000),
+('SI0025','V073_1', 300, 100000), ('SI0025','V074_1', 300, 80000),  ('SI0025','V075_1', 500, 40000),
 -- SI0026
-('SI0026','P0076',5,30000),
-('SI0026','P0077',12,15000),
-('SI0026','P0078',10,12000),
+('SI0026','V076_1', 200, 280000), ('SI0026','V077_1', 300, 150000), ('SI0026','V078_1', 300, 180000),
 -- SI0027
-('SI0027','P0079',8,22000),
-('SI0027','P0080',5,30000),
-('SI0027','P0081',12,35000),
+('SI0027','V079_1', 200, 250000), ('SI0027','V080_1', 200, 120000), ('SI0027','V081_1', 400, 200000),
 -- SI0028
-('SI0028','P0082',10,28000),
-('SI0028','P0083',12,18000),
-('SI0028','P0084',8,10000),
--- SI0029
-('SI0029','P0085',5,150000),
-('SI0029','P0086',10,22000),
-('SI0029','P0087',12,30000),
+('SI0028','V082_1', 300, 150000), ('SI0028','V083_1', 300, 100000), ('SI0028','V084_1', 300, 250000),
+-- SI0029 (Giày Sneaker hiệu)
+('SI0029','V085_1', 500, 15000),  ('SI0029','V086_1', 100, 1800000), ('SI0029','V087_1', 80, 2000000),
 -- SI0030
-('SI0030','P0088',8,25000),
-('SI0030','P0089',10,15000),
-('SI0030','P0090',12,35000),
+('SI0030','V088_1', 100, 900000), ('SI0030','V089_1', 100, 1200000), ('SI0030','V090_1', 100, 700000),
 -- SI0031
-('SI0031','P0091',10,7000),
-('SI0031','P0092',12,9000),
-('SI0031','P0093',8,20000),
+('SI0031','V001_2', 200, 250000), ('SI0031','V002_2', 300, 80000),  ('SI0031','V003_2', 200, 350000),
 -- SI0032
-('SI0032','P0094',5,30000),
-('SI0032','P0095',10,25000),
-('SI0032','P0096',12,10000),
+('SI0032','V004_2', 300, 100000), ('SI0032','V005_2', 200, 500000), ('SI0032','V006_2', 300, 200000),
 -- SI0033
-('SI0033','P0097',8,5000),
-('SI0033','P0098',10,9000),
-('SI0033','P0099',12,7000),
+('SI0033','V007_2', 200, 280000), ('SI0033','V008_2', 200, 300000), ('SI0033','V009_2', 300, 150000),
 -- SI0034
-('SI0034','P0100',8,12000),
-('SI0034','P0101',5,400000),
-('SI0034','P0102',10,250000),
+('SI0034','V010_2', 100, 450000), ('SI0034','V011_2', 200, 150000), ('SI0034','V012_2', 300, 100000),
 -- SI0035
-('SI0035','P0103',12,120000),
-('SI0035','P0104',8,15000),
-('SI0035','P0105',10,10000),
--- SI0036
-('SI0036','P0106',5,60000),
-('SI0036','P0107',12,300000),
-('SI0036','P0108',10,40000),
+('SI0035','V026_2', 300, 100000), ('SI0035','V027_2', 200, 200000), ('SI0035','V028_2', 300, 150000),
+-- SI0036 (Nước hoa)
+('SI0036','V041_2', 80, 1800000), ('SI0036','V042_2', 80, 2500000), ('SI0036','V043_2', 200, 180000),
 -- SI0037
-('SI0037','P0109',8,60000),
-('SI0037','P0110',5,1200000),
-('SI0037','P0111',12,280000),
+('SI0037','V016_2', 200, 280000), ('SI0037','V086_2', 100, 1800000), ('SI0037','V087_2', 80, 2000000),
 -- SI0038
-('SI0038','P0112',10,120000),
-('SI0038','P0113',12,40000),
-('SI0038','P0114',8,25000),
+('SI0038','V056_2', 300, 40000),  ('SI0038','V057_2', 200, 280000),  ('SI0038','V060_2', 150, 800000),
 -- SI0039
-('SI0039','P0115',5,20000),
-('SI0039','P0116',10,80000),
-('SI0039','P0117',12,600000),
+('SI0039','V046_2', 200, 150000), ('SI0039','V047_2', 300, 80000),  ('SI0039','V049_2', 300, 60000),
 -- SI0040
-('SI0040','P0118',8,400000),
-('SI0040','P0119',10,200000),
-('SI0040','P0120',12,300000),
+('SI0040','V031_1', 200, 200000), ('SI0040','V032_2', 150, 600000), ('SI0040','V034_2', 200, 300000),
 -- SI0041
-('SI0041','P0121',10,20000),
-('SI0041','P0122',12,3000),
-('SI0041','P0123',8,7000),
+('SI0041','V022_2', 200, 400000), ('SI0041','V025_2', 200, 250000), ('SI0041','V066_2', 100, 600000),
 -- SI0042
-('SI0042','P0124',5,12000),
-('SI0042','P0125',10,3000),
-('SI0042','P0126',12,5000),
+('SI0042','V081_2', 300, 200000), ('SI0042','V082_2', 300, 150000), ('SI0042','V083_2', 300, 100000),
 -- SI0043
-('SI0043','P0127',8,60000),
-('SI0043','P0128',10,20000),
-('SI0043','P0129',12,10000),
+('SI0043','V026_1', 300, 100000), ('SI0043','V029_2', 200, 250000), ('SI0043','V030_2', 300, 110000),
 -- SI0044
-('SI0044','P0130',8,3000),
-('SI0044','P0131',5,150000),
-('SI0044','P0132',10,280000),
+('SI0044','V074_2', 200, 80000),  ('SI0044','V075_1', 500, 40000),  ('SI0044','V071_2', 200, 250000),
 -- SI0045
-('SI0045','P0133',12,120000),
-('SI0045','P0134',8,100000),
-('SI0045','P0135',10,600000),
+('SI0045','V036_2', 300, 140000), ('SI0045','V037_2', 300, 160000), ('SI0045','V040_2', 300, 80000),
 -- SI0046
-('SI0046','P0136',5,300000),
-('SI0046','P0137',12,400000),
-('SI0046','P0138',10,60000),
+('SI0046','V066_1', 100, 600000), ('SI0046','V067_2', 300, 20000),  ('SI0046','V068_2', 300, 70000),
 -- SI0047
-('SI0047','P0139',8,100000),
-('SI0047','P0140',10,120000),
-('SI0047','P0141',12,150000),
+('SI0047','V076_2', 200, 280000), ('SI0047','V077_2', 200, 150000), ('SI0047','V079_2', 200, 250000),
 -- SI0048
-('SI0048','P0142',10,120000),
-('SI0048','P0143',12,200000),
-('SI0048','P0144',8,250000);
+('SI0048','V088_2', 100, 900000), ('SI0048','V089_2', 100, 1200000), ('SI0048','V090_2', 100, 700000);
 
+INSERT INTO orders (order_id, customer_id, order_date, completed_date, order_channel, direct_delivery, subtotal, shipping_cost, final_total, status, payment_status, payment_method, staff_id, delivery_staff_id) VALUES
+-- THÁNG 11/2024 (Tổng ~150 Triệu)
+('ORD001','CUS1','2024-11-05 10:00:00','2024-11-06 14:00:00','Online',FALSE, 45000000, 50000, 45050000, 'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE1','SHIP01'),
+('ORD002','CUS2','2024-11-07 11:30:00','2024-11-07 12:00:00','Trực tiếp',TRUE, 8200000, 0, 8200000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD003','CUS3','2024-11-10 09:45:00','2024-11-11 12:30:00','Online',FALSE, 62000000, 100000, 62100000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
+('ORD004','CUS4','2024-11-15 14:00:00',NULL,'Trực tiếp',TRUE, 15000000, 0, 15000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE1',NULL),
+('ORD005','CUS5','2024-11-20 13:20:00','2024-11-21 10:00:00','Online',FALSE, 25000000, 30000, 25030000, 'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE2','SHIP01'),
 
--- Bật lại kiểm tra khóa ngoại
-SET FOREIGN_KEY_CHECKS = 1;
-SET FOREIGN_KEY_CHECKS = 0;
+-- THÁNG 12/2024 (Tổng ~180 Triệu)
+('ORD006','CUS6','2024-12-02 09:15:00','2024-12-03 11:30:00','Online',FALSE, 55000000, 50000, 55050000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP02'),
+('ORD007','CUS7','2024-12-05 10:20:00',NULL,'Trực tiếp',TRUE, 22000000, 0, 22000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD008','CUS8','2024-12-12 11:45:00','2024-12-13 14:50:00','Online',FALSE, 48000000, 40000, 48040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP03'),
+('ORD009','CUS9','2024-12-20 14:10:00',NULL,'Trực tiếp',TRUE, 35000000, 0, 35000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE1',NULL),
+('ORD010','CUS10','2024-12-25 10:05:00','2024-12-26 13:20:00','Online',FALSE, 25000000, 30000, 25030000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS02','SHIP01'),
 
--- Chèn 180 sản phẩm, 10 sản phẩm mỗi danh mục
--- SQL Insert 180 products (10 sản phẩm x 18 danh mục) với image_url và brand, bỏ SKU
-INSERT INTO products (product_id, name, category_id, price, cost_price, stock_quantity, is_active, image_url, brand, avg_rating, review_count)
-VALUES
--- Danh mục 1: Thời trang nữ
-('P0001','Áo thun nữ basic',1,120000,80000,40,TRUE,'https://placehold.co/600x600?text=P0001','BrandA',0,0),
-('P0002','Áo sơ mi nữ công sở',1,180000,130000,35,TRUE,'https://placehold.co/600x600?text=P0002','BrandA',0,0),
-('P0003','Đầm dự tiệc',1,320000,250000,20,TRUE,'https://placehold.co/600x600?text=P0003','BrandB',0,0),
-('P0004','Váy xếp ly nữ',1,220000,160000,30,TRUE,'https://placehold.co/600x600?text=P0004','BrandB',0,0),
-('P0005','Quần jean nữ lưng cao',1,260000,190000,25,TRUE,'https://placehold.co/600x600?text=P0005','BrandC',0,0),
-('P0006','Quần short nữ',1,150000,100000,40,TRUE,'https://placehold.co/600x600?text=P0006','BrandC',0,0),
-('P0007','Áo khoác nữ thời trang',1,350000,260000,20,TRUE,'https://placehold.co/600x600?text=P0007','BrandD',0,0),
-('P0008','Bộ đồ thể thao nữ',1,280000,210000,25,TRUE,'https://placehold.co/600x600?text=P0008','BrandD',0,0),
-('P0009','Đồ ngủ pijama nữ',1,170000,120000,35,TRUE,'https://placehold.co/600x600?text=P0009','BrandE',0,0),
-('P0010','Áo len nữ mùa đông',1,240000,180000,30,TRUE,'https://placehold.co/600x600?text=P0010','BrandE',0,0),
+-- THÁNG 01/2025 (Tổng ~130 Triệu)
+('ORD011','CUS11','2025-01-05 10:00:00',NULL,'Trực tiếp',TRUE, 40000000, 0, 40000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD012','CUS12','2025-01-10 15:30:00','2025-01-11 16:20:00','Online',FALSE, 38000000, 40000, 38040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP01'),
+('ORD013','CUS13','2025-01-15 09:50:00','2025-01-16 11:40:00','Online',FALSE, 32000000, 30000, 32030000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE1','SHIP02'),
+('ORD014','CUS14','2025-01-25 15:10:00',NULL,'Trực tiếp',TRUE, 28000000, 0, 28000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
 
--- Danh mục 2: Thời trang nam
-('P0011','Áo thun nam basic',2,110000,75000,45,TRUE,'https://placehold.co/600x600?text=P0011','BrandF',0,0),
-('P0012','Áo sơ mi nam caro',2,190000,140000,35,TRUE,'https://placehold.co/600x600?text=P0012','BrandF',0,0),
-('P0013','Quần jean nam ống đứng',2,270000,200000,30,TRUE,'https://placehold.co/600x600?text=P0013','BrandG',0,0),
-('P0014','Quần kaki nam',2,230000,170000,25,TRUE,'https://placehold.co/600x600?text=P0014','BrandG',0,0),
-('P0015','Áo khoác nam bomber',2,360000,280000,20,TRUE,'https://placehold.co/600x600?text=P0015','BrandH',0,0),
-('P0016','Quần short nam thể thao',2,160000,100000,40,TRUE,'https://placehold.co/600x600?text=P0016','BrandH',0,0),
-('P0017','Áo polo nam',2,170000,120000,35,TRUE,'https://placehold.co/600x600?text=P0017','BrandI',0,0),
-('P0018','Bộ đồ thể thao nam',2,300000,220000,20,TRUE,'https://placehold.co/600x600?text=P0018','BrandI',0,0),
-('P0019','Áo sweater nam',2,240000,180000,25,TRUE,'https://placehold.co/600x600?text=P0019','BrandJ',0,0),
-('P0020','Áo hoodie nam',2,280000,210000,20,TRUE,'https://placehold.co/600x600?text=P0020','BrandJ',0,0),
+-- THÁNG 02/2025 (Tổng ~110 Triệu)
+('ORD015','CUS15','2025-02-05 09:30:00','2025-02-06 12:00:00','Online',FALSE, 45000000, 40000, 45040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD016','CUS16','2025-02-14 10:45:00',NULL,'Trực tiếp',TRUE, 55000000, 0, 55000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD017','CUS17','2025-02-20 11:50:00','2025-02-21 14:20:00','Online',FALSE, 12000000, 20000, 12020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 3: Thời trang trẻ em
-('P0021','Áo thun bé trai',3,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0021','BrandK',0,0),
-('P0022','Áo thun bé gái',3,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0022','BrandK',0,0),
-('P0023','Đầm công chúa',3,150000,110000,30,TRUE,'https://placehold.co/600x600?text=P0023','BrandL',0,0),
-('P0024','Quần short trẻ em',3,70000,45000,60,TRUE,'https://placehold.co/600x600?text=P0024','BrandL',0,0),
-('P0025','Quần jean trẻ em',3,120000,80000,40,TRUE,'https://placehold.co/600x600?text=P0025','BrandM',0,0),
-('P0026','Áo khoác trẻ em',3,180000,130000,25,TRUE,'https://placehold.co/600x600?text=P0026','BrandM',0,0),
-('P0027','Đồ bộ trẻ em',3,140000,100000,35,TRUE,'https://placehold.co/600x600?text=P0027','BrandN',0,0),
-('P0028','Pijama trẻ em',3,110000,80000,35,TRUE,'https://placehold.co/600x600?text=P0028','BrandN',0,0),
-('P0029','Váy bé gái dễ thương',3,130000,90000,35,TRUE,'https://placehold.co/600x600?text=P0029','BrandO',0,0),
-('P0030','Bộ thể thao trẻ em',3,150000,110000,30,TRUE,'https://placehold.co/600x600?text=P0030','BrandO',0,0),
--- Danh mục 4: Giày dép
-('P0031','Sneaker nam',4,350000,250000,30,TRUE,'https://placehold.co/600x600?text=P0031','BrandP',0,0),
-('P0032','Sneaker nữ',4,340000,240000,30,TRUE,'https://placehold.co/600x600?text=P0032','BrandP',0,0),
-('P0033','Giày cao gót 7cm',4,280000,200000,25,TRUE,'https://placehold.co/600x600?text=P0033','BrandQ',0,0),
-('P0034','Sandal nữ thời trang',4,160000,110000,40,TRUE,'https://placehold.co/600x600?text=P0034','BrandQ',0,0),
-('P0035','Dép lông nữ',4,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0035','BrandR',0,0),
-('P0036','Sandal nam',4,150000,100000,40,TRUE,'https://placehold.co/600x600?text=P0036','BrandR',0,0),
-('P0037','Giày tây nam da bò',4,390000,290000,20,TRUE,'https://placehold.co/600x600?text=P0037','BrandS',0,0),
-('P0038','Giày slip-on nữ',4,200000,150000,30,TRUE,'https://placehold.co/600x600?text=P0038','BrandS',0,0),
-('P0039','Dép nam quai ngang',4,70000,45000,60,TRUE,'https://placehold.co/600x600?text=P0039','BrandT',0,0),
-('P0040','Giày thể thao trẻ em',4,160000,110000,35,TRUE,'https://placehold.co/600x600?text=P0040','BrandT',0,0),
+-- THÁNG 03/2025 (Tổng ~105 Triệu)
+('ORD018','CUS18','2025-03-05 09:30:00','2025-03-06 12:00:00','Online',FALSE, 65000000, 40000, 65040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD019','CUS19','2025-03-14 10:45:00',NULL,'Trực tiếp',TRUE, 30000000, 0, 30000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD020','CUS20','2025-03-20 11:50:00','2025-03-21 14:20:00','Online',FALSE, 12000000, 20000, 12020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 5: Mỹ phẩm
-('P0041','Son môi đỏ',5,150000,100000,50,TRUE,'https://placehold.co/600x600?text=P0041','BrandU',0,0),
-('P0042','Son môi hồng',5,150000,100000,50,TRUE,'https://placehold.co/600x600?text=P0042','BrandU',0,0),
-('P0043','Kem nền dạng lỏng',5,220000,170000,35,TRUE,'https://placehold.co/600x600?text=P0043','BrandV',0,0),
-('P0044','Phấn má hồng',5,180000,130000,40,TRUE,'https://placehold.co/600x600?text=P0044','BrandV',0,0),
-('P0045','Kẻ mắt nước',5,120000,90000,45,TRUE,'https://placehold.co/600x600?text=P0045','BrandW',0,0),
-('P0046','Mascara đen',5,150000,110000,40,TRUE,'https://placehold.co/600x600?text=P0046','BrandW',0,0),
-('P0047','Phấn mắt 12 màu',5,200000,150000,30,TRUE,'https://placehold.co/600x600?text=P0047','BrandX',0,0),
-('P0048','Tẩy trang dạng dầu',5,170000,120000,35,TRUE,'https://placehold.co/600x600?text=P0048','BrandX',0,0),
-('P0049','Son dưỡng môi',5,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0049','BrandY',0,0),
-('P0050','Nước hoa mini',5,250000,180000,25,TRUE,'https://placehold.co/600x600?text=P0050','BrandY',0,0),
+-- THÁNG 04/2025 (Tổng ~110 Triệu)
+('ORD021','CUS21','2025-04-05 09:30:00','2025-04-06 12:00:00','Online',FALSE, 55000000, 40000, 55040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD022','CUS22','2025-04-14 10:45:00',NULL,'Trực tiếp',TRUE, 40000000, 0, 40000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD023','CUS23','2025-04-20 11:50:00','2025-04-21 14:20:00','Online',FALSE, 15000000, 20000, 15020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 6: Dụng cụ trang điểm
-('P0051','Cọ trang điểm cơ bản',6,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0051','BrandZ',0,0),
-('P0052','Bông mút trang điểm',6,50000,30000,60,TRUE,'https://placehold.co/600x600?text=P0052','BrandZ',0,0),
-('P0053','Cọ mắt 5 cây',6,120000,90000,35,TRUE,'https://placehold.co/600x600?text=P0053','BrandAA',0,0),
-('P0054','Cọ má hồng',6,110000,80000,40,TRUE,'https://placehold.co/600x600?text=P0054','BrandAA',0,0),
-('P0055','Gương trang điểm',6,180000,130000,25,TRUE,'https://placehold.co/600x600?text=P0055','BrandBB',0,0),
-('P0056','Túi đựng mỹ phẩm',6,160000,120000,30,TRUE,'https://placehold.co/600x600?text=P0056','BrandBB',0,0),
-('P0057','Cọ đánh nền',6,140000,100000,35,TRUE,'https://placehold.co/600x600?text=P0057','BrandCC',0,0),
-('P0058','Cọ môi',6,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0058','BrandCC',0,0),
-('P0059','Bông tẩy trang',6,50000,30000,60,TRUE,'https://placehold.co/600x600?text=P0059','BrandDD',0,0),
-('P0060','Cọ highlight',6,130000,90000,35,TRUE,'https://placehold.co/600x600?text=P0060','BrandDD',0,0),
--- Danh mục 7: Nước hoa
-('P0061','Nước hoa nữ 30ml',7,350000,250000,30,TRUE,'https://placehold.co/600x600?text=P0061','BrandEE',0,0),
-('P0062','Nước hoa nữ 50ml',7,550000,400000,25,TRUE,'https://placehold.co/600x600?text=P0062','BrandEE',0,0),
-('P0063','Nước hoa nam 30ml',7,300000,220000,35,TRUE,'https://placehold.co/600x600?text=P0063','BrandFF',0,0),
-('P0064','Nước hoa nam 50ml',7,500000,350000,20,TRUE,'https://placehold.co/600x600?text=P0064','BrandFF',0,0),
-('P0065','Nước hoa unisex',7,400000,300000,25,TRUE,'https://placehold.co/600x600?text=P0065','BrandGG',0,0),
-('P0066','Nước hoa mini nữ',7,150000,100000,50,TRUE,'https://placehold.co/600x600?text=P0066','BrandGG',0,0),
-('P0067','Nước hoa mini nam',7,150000,100000,50,TRUE,'https://placehold.co/600x600?text=P0067','BrandHH',0,0),
-('P0068','Set nước hoa 2 chai',7,700000,500000,15,TRUE,'https://placehold.co/600x600?text=P0068','BrandHH',0,0),
-('P0069','Nước hoa hương trái cây',7,250000,180000,40,TRUE,'https://placehold.co/600x600?text=P0069','BrandII',0,0),
-('P0070','Nước hoa hương hoa',7,260000,200000,35,TRUE,'https://placehold.co/600x600?text=P0070','BrandII',0,0),
+-- THÁNG 05/2025 (Tổng ~120 Triệu)
+('ORD024','CUS24','2025-05-05 09:30:00','2025-05-06 12:00:00','Online',FALSE, 60000000, 40000, 60040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD025','CUS25','2025-05-14 10:45:00',NULL,'Trực tiếp',TRUE, 40000000, 0, 40000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD026','CUS26','2025-05-20 11:50:00','2025-05-21 14:20:00','Online',FALSE, 20000000, 20000, 20020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 8: Túi xách
-('P0071','Túi xách nữ mini',8,300000,220000,25,TRUE,'https://placehold.co/600x600?text=P0071','BrandJJ',0,0),
-('P0072','Túi xách nữ lớn',8,450000,350000,20,TRUE,'https://placehold.co/600x600?text=P0072','BrandJJ',0,0),
-('P0073','Túi đeo chéo nam',8,250000,180000,30,TRUE,'https://placehold.co/600x600?text=P0073','BrandKK',0,0),
-('P0074','Balo nam thời trang',8,350000,260000,20,TRUE,'https://placehold.co/600x600?text=P0074','BrandKK',0,0),
-('P0075','Balo nữ mini',8,280000,210000,25,TRUE,'https://placehold.co/600x600?text=P0075','BrandLL',0,0),
-('P0076','Túi tote nữ',8,200000,150000,30,TRUE,'https://placehold.co/600x600?text=P0076','BrandLL',0,0),
-('P0077','Túi ví nữ',8,120000,90000,40,TRUE,'https://placehold.co/600x600?text=P0077','BrandMM',0,0),
-('P0078','Túi xách da nam',8,400000,300000,20,TRUE,'https://placehold.co/600x600?text=P0078','BrandMM',0,0),
-('P0079','Túi xách nữ họa tiết',8,220000,170000,35,TRUE,'https://placehold.co/600x600?text=P0079','BrandNN',0,0),
-('P0080','Balo học sinh',8,180000,130000,50,TRUE,'https://placehold.co/600x600?text=P0080','BrandNN',0,0),
+-- THÁNG 06/2025 (Tổng ~115 Triệu)
+('ORD027','CUS27','2025-06-05 09:30:00','2025-06-06 12:00:00','Online',FALSE, 55000000, 40000, 55040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD028','CUS28','2025-06-14 10:45:00',NULL,'Trực tiếp',TRUE, 40000000, 0, 40000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD029','CUS29','2025-06-20 11:50:00','2025-06-21 14:20:00','Online',FALSE, 20000000, 20000, 20020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 9: Phụ kiện thời trang
-('P0081','Kính mát nữ',9,150000,100000,40,TRUE,'https://placehold.co/600x600?text=P0081','BrandOO',0,0),
-('P0082','Kính mát nam',9,160000,110000,35,TRUE,'https://placehold.co/600x600?text=P0082','BrandOO',0,0),
-('P0083','Thắt lưng nam',9,120000,80000,50,TRUE,'https://placehold.co/600x600?text=P0083','BrandPP',0,0),
-('P0084','Thắt lưng nữ',9,130000,90000,45,TRUE,'https://placehold.co/600x600?text=P0084','BrandPP',0,0),
-('P0085','Mũ thời trang nữ',9,90000,60000,60,TRUE,'https://placehold.co/600x600?text=P0085','BrandQQ',0,0),
-('P0086','Mũ thời trang nam',9,95000,65000,55,TRUE,'https://placehold.co/600x600?text=P0086','BrandQQ',0,0),
-('P0087','Khăn choàng nữ',9,110000,80000,50,TRUE,'https://placehold.co/600x600?text=P0087','BrandRR',0,0),
-('P0088','Khăn choàng nam',9,120000,85000,45,TRUE,'https://placehold.co/600x600?text=P0088','BrandRR',0,0),
-('P0089','Vòng tay nữ',9,80000,50000,60,TRUE,'https://placehold.co/600x600?text=P0089','BrandSS',0,0),
-('P0090','Vòng tay nam',9,85000,55000,55,TRUE,'https://placehold.co/600x600?text=P0090','BrandSS',0,0),
+-- THÁNG 07/2025 (Tổng ~105 Triệu)
+('ORD030','CUS30','2025-07-05 09:30:00','2025-07-06 12:00:00','Online',FALSE, 45000000, 40000, 45040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD031','CUS31','2025-07-14 10:45:00',NULL,'Trực tiếp',TRUE, 35000000, 0, 35000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD032','CUS32','2025-07-20 11:50:00','2025-07-21 14:20:00','Online',FALSE, 25000000, 20000, 25020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 10: Đồng hồ
-('P0091','Đồng hồ nam dây da',10,450000,300000,25,TRUE,'https://placehold.co/600x600?text=P0091','BrandTT',0,0),
-('P0092','Đồng hồ nam thể thao',10,500000,350000,20,TRUE,'https://placehold.co/600x600?text=P0092','BrandTT',0,0),
-('P0093','Đồng hồ nữ dây da',10,400000,280000,25,TRUE,'https://placehold.co/600x600?text=P0093','BrandUU',0,0),
-('P0094','Đồng hồ nữ thời trang',10,420000,300000,20,TRUE,'https://placehold.co/600x600?text=P0094','BrandUU',0,0),
-('P0095','Đồng hồ đôi',10,650000,500000,15,TRUE,'https://placehold.co/600x600?text=P0095','BrandVV',0,0),
-('P0096','Đồng hồ thông minh',10,900000,700000,10,TRUE,'https://placehold.co/600x600?text=P0096','BrandVV',0,0),
-('P0097','Đồng hồ thể thao trẻ em',10,300000,200000,20,TRUE,'https://placehold.co/600x600?text=P0097','BrandWW',0,0),
-('P0098','Đồng hồ nữ mini',10,350000,250000,25,TRUE,'https://placehold.co/600x600?text=P0098','BrandWW',0,0),
-('P0099','Đồng hồ nam cơ',10,800000,600000,10,TRUE,'https://placehold.co/600x600?text=P0099','BrandXX',0,0),
-('P0100','Đồng hồ nữ cơ',10,750000,550000,15,TRUE,'https://placehold.co/600x600?text=P0100','BrandXX',0,0),
+-- THÁNG 08/2025 (Tổng ~120 Triệu)
+('ORD033','CUS33','2025-08-05 09:30:00','2025-08-06 12:00:00','Online',FALSE, 60000000, 40000, 60040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD034','CUS34','2025-08-14 10:45:00',NULL,'Trực tiếp',TRUE, 40000000, 0, 40000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD035','CUS35','2025-08-20 11:50:00','2025-08-21 14:20:00','Online',FALSE, 20000000, 20000, 20020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 11: Trang sức
-('P0101','Nhẫn vàng nữ',11,350000,250000,20,TRUE,'https://placehold.co/600x600?text=P0101','BrandYY',0,0),
-('P0102','Nhẫn bạc nam',11,200000,150000,25,TRUE,'https://placehold.co/600x600?text=P0102','BrandYY',0,0),
-('P0103','Dây chuyền nữ',11,300000,200000,30,TRUE,'https://placehold.co/600x600?text=P0103','BrandZZ',0,0),
-('P0104','Dây chuyền nam',11,320000,220000,25,TRUE,'https://placehold.co/600x600?text=P0104','BrandZZ',0,0),
-('P0105','Bông tai nữ',11,150000,100000,40,TRUE,'https://placehold.co/600x600?text=P0105','BrandAAA',0,0),
-('P0106','Vòng tay nữ',11,200000,150000,35,TRUE,'https://placehold.co/600x600?text=P0106','BrandAAB',0,0),
-('P0107','Vòng cổ nam',11,250000,180000,30,TRUE,'https://placehold.co/600x600?text=P0107','BrandBBB',0,0),
-('P0108','Nhẫn đôi',11,300000,220000,20,TRUE,'https://placehold.co/600x600?text=P0108','BrandBBB',0,0),
-('P0109','Bông tai đôi',11,180000,120000,25,TRUE,'https://placehold.co/600x600?text=P0109','BrandCCC',0,0),
-('P0110','Vòng tay đôi',11,220000,160000,20,TRUE,'https://placehold.co/600x600?text=P0110','BrandCCC',0,0),
+-- THÁNG 09/2025 (Tổng ~125 Triệu)
+('ORD036','CUS36','2025-09-05 09:30:00','2025-09-06 12:00:00','Online',FALSE, 65000000, 40000, 65040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD037','CUS37','2025-09-14 10:45:00',NULL,'Trực tiếp',TRUE, 40000000, 0, 40000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD038','CUS38','2025-09-20 11:50:00','2025-09-21 14:20:00','Online',FALSE, 20000000, 20000, 20020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 12: Mũ nón
-('P0111','Mũ lưỡi trai nam',12,120000,80000,50,TRUE,'https://placehold.co/600x600?text=P0111','BrandDDD',0,0),
-('P0112','Mũ lưỡi trai nữ',12,120000,80000,50,TRUE,'https://placehold.co/600x600?text=P0112','BrandDDD',0,0),
-('P0113','Mũ beret nữ',12,90000,60000,40,TRUE,'https://placehold.co/600x600?text=P0113','BrandEEE',0,0),
-('P0114','Mũ phớt nam',12,130000,90000,35,TRUE,'https://placehold.co/600x600?text=P0114','BrandEEE',0,0),
-('P0115','Mũ rộng vành nữ',12,150000,110000,30,TRUE,'https://placehold.co/600x600?text=P0115','BrandFFF',0,0),
-('P0116','Mũ rộng vành nam',12,150000,110000,30,TRUE,'https://placehold.co/600x600?text=P0116','BrandFFF',0,0),
-('P0117','Mũ len nữ',12,80000,50000,60,TRUE,'https://placehold.co/600x600?text=P0117','BrandGGG',0,0),
-('P0118','Mũ len nam',12,85000,55000,55,TRUE,'https://placehold.co/600x600?text=P0118','BrandGGG',0,0),
-('P0119','Mũ bóng chày trẻ em',12,70000,45000,70,TRUE,'https://placehold.co/600x600?text=P0119','BrandHHH',0,0),
-('P0120','Mũ thời trang trẻ em',12,75000,50000,65,TRUE,'https://placehold.co/600x600?text=P0120','BrandHHH',0,0),
+-- THÁNG 10/2025 (Tổng ~110 Triệu)
+('ORD039','CUS39','2025-10-05 09:30:00','2025-10-06 12:00:00','Online',FALSE, 50000000, 40000, 50040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD040','CUS40','2025-10-14 10:45:00',NULL,'Trực tiếp',TRUE, 40000000, 0, 40000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD041','CUS41','2025-10-20 11:50:00','2025-10-21 14:20:00','Online',FALSE, 20000000, 20000, 20020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
 
--- Danh mục 13: Thắt lưng
-('P0121','Thắt lưng nam da bò',13,180000,130000,35,TRUE,'https://placehold.co/600x600?text=P0121','BrandIII',0,0),
-('P0122','Thắt lưng nữ da thật',13,200000,150000,30,TRUE,'https://placehold.co/600x600?text=P0122','BrandIII',0,0),
-('P0123','Thắt lưng trẻ em',13,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0123','BrandJJJ',0,0),
-('P0124','Thắt lưng nam cao cấp',13,250000,180000,20,TRUE,'https://placehold.co/600x600?text=P0124','BrandJJJ',0,0),
-('P0125','Thắt lưng nữ thời trang',13,220000,160000,25,TRUE,'https://placehold.co/600x600?text=P0125','BrandKKK',0,0),
-('P0126','Thắt lưng nam thể thao',13,200000,150000,30,TRUE,'https://placehold.co/600x600?text=P0126','BrandKKK',0,0),
-('P0127','Thắt lưng da bò handmade',13,350000,250000,15,TRUE,'https://placehold.co/600x600?text=P0127','BrandLLL',0,0),
-('P0128','Thắt lưng da PU',13,150000,100000,40,TRUE,'https://placehold.co/600x600?text=P0128','BrandLLL',0,0),
-('P0129','Thắt lưng trẻ em thời trang',13,120000,90000,50,TRUE,'https://placehold.co/600x600?text=P0129','BrandMMM',0,0),
-('P0130','Thắt lưng đôi',13,300000,220000,20,TRUE,'https://placehold.co/600x600?text=P0130','BrandMMM',0,0),
+-- THÁNG 11/2025 (Tổng ~115 Triệu)
+('ORD042','CUS42','2025-11-05 09:30:00','2025-11-06 12:00:00','Online',FALSE, 55000000, 40000, 55040000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
+('ORD043','CUS43','2025-11-14 10:45:00',NULL,'Trực tiếp',TRUE, 40000000, 0, 40000000, 'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE2',NULL),
+('ORD044','CUS44','2025-11-20 11:50:00','2025-11-21 14:20:00','Online',FALSE, 20000000, 20000, 20020000, 'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02');
+INSERT INTO order_details (order_id, variant_id, quantity, price_at_order) VALUES
+-- ORD001 (45 Triệu - Khách sỉ mua Giày & Áo)
+('ORD001','V086_1', 10, 2500000), -- 10 đôi AF1 (25tr)
+('ORD001','V005_1', 20, 1000000), -- 20 Blazer (20tr)
 
--- Danh mục 14: Vớ/Tất
-('P0131','Tất nữ cổ cao',14,50000,30000,60,TRUE,'https://placehold.co/600x600?text=P0131','BrandNNN',0,0),
-('P0132','Tất nam cổ cao',14,50000,30000,60,TRUE,'https://placehold.co/600x600?text=P0132','BrandNNN',0,0),
-('P0133','Vớ trẻ em',14,40000,25000,70,TRUE,'https://placehold.co/600x600?text=P0133','BrandOOO',0,0),
-('P0134','Vớ nữ thể thao',14,45000,30000,60,TRUE,'https://placehold.co/600x600?text=P0134','BrandOOO',0,0),
-('P0135','Vớ nam thể thao',14,45000,30000,60,TRUE,'https://placehold.co/600x600?text=P0135','BrandPPP',0,0),
-('P0136','Tất ngắn nữ',14,40000,25000,70,TRUE,'https://placehold.co/600x600?text=P0136','BrandPPP',0,0),
-('P0137','Tất ngắn nam',14,40000,25000,65,TRUE,'https://placehold.co/600x600?text=P0137','BrandQQQ',0,0),
-('P0138','Vớ chân dài nữ',14,50000,30000,60,TRUE,'https://placehold.co/600x600?text=P0138','BrandQQQ',0,0),
-('P0139','Vớ chân dài nam',14,50000,30000,60,TRUE,'https://placehold.co/600x600?text=P0139','BrandRRR',0,0),
-('P0140','Vớ trẻ em họa tiết',14,45000,30000,70,TRUE,'https://placehold.co/600x600?text=P0140','BrandRRR',0,0),
+-- ORD002 (8.2 Triệu)
+('ORD002','V041_1', 2, 2500000),  -- 2 Nước hoa GoodGirl (5tr)
+('ORD002','V042_1', 1, 3200000),  -- 1 Chanel Bleu (3.2tr)
 
--- Danh mục 15: Kính mắt
-('P0141','Kính mát nam thời trang',15,150000,100000,35,TRUE,'https://placehold.co/600x600?text=P0141','BrandSSS',0,0),
-('P0142','Kính mát nữ thời trang',15,160000,110000,35,TRUE,'https://placehold.co/600x600?text=P0142','BrandSSS',0,0),
-('P0143','Kính đọc sách nam',15,120000,80000,40,TRUE,'https://placehold.co/600x600?text=P0143','BrandTTT',0,0),
-('P0144','Kính đọc sách nữ',15,120000,80000,40,TRUE,'https://placehold.co/600x600?text=P0144','BrandTTT',0,0),
-('P0145','Kính mắt trẻ em',15,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0145','BrandUUU',0,0),
-('P0146','Kính râm thể thao',15,150000,110000,35,TRUE,'https://placehold.co/600x600?text=P0146','BrandUUU',0,0),
-('P0147','Kính phi công nam',15,200000,150000,25,TRUE,'https://placehold.co/600x600?text=P0147','BrandVVV',0,0),
-('P0148','Kính phi công nữ',15,200000,150000,25,TRUE,'https://placehold.co/600x600?text=P0148','BrandVVV',0,0),
-('P0149','Kính mát unisex',15,180000,130000,30,TRUE,'https://placehold.co/600x600?text=P0149','BrandWWW',0,0),
-('P0150','Kính thời trang nam nữ',15,180000,130000,30,TRUE,'https://placehold.co/600x600?text=P0150','BrandWWW',0,0),
+-- ORD003 (62 Triệu - Đơn sỉ Mỹ phẩm)
+('ORD003','V032_2', 50, 850000),  -- 50 Toner Kiehl (42.5tr)
+('ORD003','V034_1', 30, 450000),  -- 30 Kem B5 (13.5tr)
+('ORD003','V026_1', 30, 200000),  -- 30 Son (6tr)
 
--- Danh mục 16: Túi ví
-('P0151','Túi ví nữ nhỏ',16,200000,150000,30,TRUE,'https://placehold.co/600x600?text=P0151','BrandXXX',0,0),
-('P0152','Túi ví nữ lớn',16,250000,180000,25,TRUE,'https://placehold.co/600x600?text=P0152','BrandXXX',0,0),
-('P0153','Túi ví nam da thật',16,300000,220000,20,TRUE,'https://placehold.co/600x600?text=P0153','BrandYYY',0,0),
-('P0154','Túi ví nam thời trang',16,280000,200000,25,TRUE,'https://placehold.co/600x600?text=P0154','BrandYYY',0,0),
-('P0155','Ví cầm tay nữ',16,180000,130000,35,TRUE,'https://placehold.co/600x600?text=P0155','BrandZZZ',0,0),
-('P0156','Ví đựng thẻ',16,120000,90000,40,TRUE,'https://placehold.co/600x600?text=P0156','BrandZZZ',0,0),
-('P0157','Ví da bò nam',16,250000,180000,25,TRUE,'https://placehold.co/600x600?text=P0157','BrandAAA1',0,0),
-('P0158','Ví da tổng hợp nữ',16,150000,110000,35,TRUE,'https://placehold.co/600x600?text=P0158','BrandAAA1',0,0),
-('P0159','Ví mini trẻ em',16,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0159','BrandBBB1',0,0),
-('P0160','Ví đôi nam nữ',16,300000,220000,20,TRUE,'https://placehold.co/600x600?text=P0160','BrandBBB1',0,0),
+-- ORD004 (15 Triệu)
+('ORD004','V059_1', 10, 850000),  -- 10 Túi kẹp nách (8.5tr)
+('ORD004','V022_1', 10, 650000),  -- 10 Mũ NY (6.5tr)
 
--- Danh mục 17: Phụ kiện tóc
-('P0161','Kẹp tóc nữ',17,50000,30000,60,TRUE,'https://placehold.co/600x600?text=P0161','BrandCCC1',0,0),
-('P0162','Băng đô nữ',17,60000,40000,50,TRUE,'https://placehold.co/600x600?text=P0162','BrandCCC1',0,0),
-('P0163','Cột tóc nữ',17,40000,25000,70,TRUE,'https://placehold.co/600x600?text=P0163','BrandDDD1',0,0),
-('P0164','Tóc giả nữ',17,250000,180000,25,TRUE,'https://placehold.co/600x600?text=P0164','BrandDDD1',0,0),
-('P0165','Kẹp tóc trẻ em',17,30000,20000,80,TRUE,'https://placehold.co/600x600?text=P0165','BrandEEE1',0,0),
-('P0166','Băng đô trẻ em',17,35000,25000,70,TRUE,'https://placehold.co/600x600?text=P0166','BrandEEE1',0,0),
-('P0167','Kẹp tóc nam',17,50000,30000,50,TRUE,'https://placehold.co/600x600?text=P0167','BrandFFF1',0,0),
-('P0168','Băng đô nam',17,60000,40000,40,TRUE,'https://placehold.co/600x600?text=P0168','BrandFFF1',0,0),
-('P0169','Phụ kiện tóc đôi',17,70000,50000,30,TRUE,'https://placehold.co/600x600?text=P0169','BrandGGG1',0,0),
-('P0170','Phụ kiện tóc thời trang',17,80000,60000,25,TRUE,'https://placehold.co/600x600?text=P0170','BrandGGG1',0,0),
+-- ORD005 (25 Triệu)
+('ORD005','V087_1', 5, 3000000),  -- 5 Giày Boost (15tr)
+('ORD005','V060_1', 5, 1200000),  -- 5 Vali (6tr)
+('ORD005','V066_1', 4, 1000000),  -- 4 Ốp UAG (4tr)
 
--- Danh mục 18: Thời trang thể thao
-('P0171','Bộ đồ thể thao nam',18,300000,220000,25,TRUE,'https://placehold.co/600x600?text=P0171','BrandHHH1',0,0),
-('P0172','Bộ đồ thể thao nữ',18,280000,210000,25,TRUE,'https://placehold.co/600x600?text=P0172','BrandHHH1',0,0),
-('P0173','Quần legging nữ',18,150000,110000,40,TRUE,'https://placehold.co/600x600?text=P0173','BrandIII1',0,0),
-('P0174','Quần short thể thao nam',18,160000,120000,35,TRUE,'https://placehold.co/600x600?text=P0174','BrandIII1',0,0),
-('P0175','Áo thun thể thao nam',18,120000,90000,50,TRUE,'https://placehold.co/600x600?text=P0175','BrandJJJ1',0,0),
-('P0176','Áo thun thể thao nữ',18,120000,90000,50,TRUE,'https://placehold.co/600x600?text=P0176','BrandJJJ1',0,0),
-('P0177','Giày thể thao nam',18,350000,250000,30,TRUE,'https://placehold.co/600x600?text=P0177','BrandKKK1',0,0),
-('P0178','Giày thể thao nữ',18,340000,240000,30,TRUE,'https://placehold.co/600x600?text=P0178','BrandKKK1',0,0),
-('P0179','Balo thể thao',18,280000,210000,25,TRUE,'https://placehold.co/600x600?text=P0179','BrandLLL1',0,0),
-('P0180','Phụ kiện thể thao',18,90000,60000,50,TRUE,'https://placehold.co/600x600?text=P0180','BrandLLL1',0,0);
+-- ORD006 (55 Triệu - Đơn sỉ Nước hoa)
+('ORD006','V042_1', 10, 3200000), -- 10 Chanel Bleu (32tr)
+('ORD006','V041_1', 8, 2500000),  -- 8 GoodGirl (20tr)
+('ORD006','V021_1', 1, 3000000),  -- Kính (3tr)
+
+-- ORD007 (22 Triệu)
+('ORD007','V089_1', 10, 1800000), -- 10 Giày MLB (18tr)
+('ORD007','V057_1', 8, 500000),   -- 8 Túi chéo (4tr)
+
+-- ORD008 (48 Triệu - Giày hiệu)
+('ORD008','V086_1', 10, 2500000), -- 10 AF1 (25tr)
+('ORD008','V087_1', 5, 3000000),  -- 5 Boost (15tr)
+('ORD008','V090_1', 5, 1200000),  -- 5 Vans (6tr)
+('ORD008','V066_1', 2, 1000000),  -- 2 Ốp (2tr)
+
+-- ORD009 (35 Triệu)
+('ORD009','V005_1', 20, 1000000), -- 20 Blazer (20tr)
+('ORD009','V001_1', 20, 500000),  -- 20 Đầm (10tr)
+('ORD009','V003_1', 10, 500000),  -- 10 Jeans (5tr)
+
+-- ORD010 (25 Triệu)
+('ORD010','V060_2', 10, 1200000), -- 10 Vali xanh (12tr)
+('ORD010','V058_1', 20, 400000),  -- 20 Balo (8tr)
+('ORD010','V056_1', 50, 100000),  -- 50 Tote (5tr)
+
+-- ORD011 (40 Triệu)
+('ORD011','V042_1', 10, 3200000), -- 10 Chanel (32tr)
+('ORD011','V022_1', 10, 650000),  -- 10 Mũ (6.5tr)
+('ORD011','V025_1', 3, 500000),   -- 3 Ví (1.5tr)
+
+-- ORD012 (38 Triệu)
+('ORD012','V088_1', 10, 1500000), -- 10 Converse (15tr)
+('ORD012','V089_1', 10, 1800000), -- 10 MLB (18tr)
+('ORD012','V021_1', 1, 5000000),  -- 1 Kính hiệu (5tr)
+
+-- ORD013 (32 Triệu)
+('ORD013','V032_2', 20, 850000),  -- 20 Toner (17tr)
+('ORD013','V034_1', 20, 500000),  -- 20 Kem (10tr)
+('ORD013','V035_1', 10, 300000),  -- 10 KCN (3tr)
+('ORD013','V026_1', 10, 200000),  -- 10 Son (2tr)
+
+-- ORD014 (28 Triệu)
+('ORD014','V006_1', 20, 400000),  -- 20 Sơ mi (8tr)
+('ORD014','V007_1', 20, 500000),  -- 20 Quần âu (10tr)
+('ORD014','V008_1', 10, 600000),  -- 10 Polo (6tr)
+('ORD014','V018_1', 2, 2000000),  -- 2 Giày tây (4tr)
+
+-- ORD015 (45 Triệu)
+('ORD015','V041_1', 10, 2500000), -- 10 GoodGirl (25tr)
+('ORD015','V086_1', 8, 2500000),  -- 8 AF1 (20tr)
+
+-- ORD016 (55 Triệu - Valentine)
+('ORD016','V061_1', 50, 600000),  -- 50 Set quà (30tr)
+('ORD016','V042_1', 5, 3200000),  -- 5 Chanel (16tr)
+('ORD016','V025_1', 10, 500000),  -- 10 Ví (5tr)
+('ORD016','V026_1', 20, 200000),  -- 20 Son (4tr)
+
+-- ORD017 (12 Triệu)
+('ORD017','V001_1', 10, 500000),  -- 10 Đầm (5tr)
+('ORD017','V016_1', 10, 500000),  -- 10 Cao gót (5tr)
+('ORD017','V025_1', 4, 500000),   -- 4 Ví (2tr)
+
+-- ORD018 (65 Triệu)
+('ORD018','V087_1', 15, 3000000), -- 15 Boost (45tr)
+('ORD018','V086_1', 8, 2500000),  -- 8 AF1 (20tr)
+
+-- ORD019 (30 Triệu)
+('ORD019','V005_1', 20, 1000000), -- 20 Blazer (20tr)
+('ORD019','V004_1', 20, 500000),  -- 20 Váy (10tr)
+
+-- ORD020 (12 Triệu)
+('ORD020','V060_2', 10, 1200000), -- 10 Vali (12tr)
+
+-- ORD021 (55 Triệu)
+('ORD021','V041_1', 10, 2500000), -- 10 GoodGirl (25tr)
+('ORD021','V042_1', 5, 3200000),  -- 5 Chanel (16tr)
+('ORD021','V089_1', 8, 1800000),  -- 8 MLB (14.4tr)
+
+-- ORD022 (40 Triệu)
+('ORD022','V086_1', 16, 2500000), -- 16 AF1 (40tr)
+
+-- ORD023 (15 Triệu)
+('ORD023','V032_2', 10, 850000),  -- 10 Toner (8.5tr)
+('ORD023','V034_1', 10, 450000),  -- 10 Kem (4.5tr)
+('ORD023','V026_1', 10, 200000),  -- 10 Son (2tr)
+
+-- ORD024 (60 Triệu)
+('ORD024','V087_1', 20, 3000000), -- 20 Boost (60tr)
+
+-- ORD025 (40 Triệu)
+('ORD025','V042_1', 10, 3200000), -- 10 Chanel (32tr)
+('ORD025','V059_1', 10, 800000),  -- 10 Túi (8tr)
+
+-- ORD026 (20 Triệu)
+('ORD026','V005_1', 20, 1000000), -- 20 Blazer (20tr)
+
+-- ORD027 (55 Triệu)
+('ORD027','V086_1', 22, 2500000), -- 22 AF1 (55tr)
+
+-- ORD028 (40 Triệu)
+('ORD028','V041_1', 16, 2500000), -- 16 GoodGirl (40tr)
+
+-- ORD029 (20 Triệu)
+('ORD029','V060_1', 10, 1200000), -- 10 Vali Hồng (12tr)
+('ORD029','V058_1', 20, 400000),  -- 20 Balo (8tr)
+
+-- ORD030 (45 Triệu)
+('ORD030','V087_1', 15, 3000000), -- 15 Boost (45tr)
+
+-- ORD031 (35 Triệu)
+('ORD031','V042_1', 10, 3200000), -- 10 Chanel (32tr)
+('ORD031','V021_1', 1, 3000000),  -- 1 Kính (3tr)
+
+-- ORD032 (25 Triệu)
+('ORD032','V086_1', 10, 2500000), -- 10 AF1 (25tr)
+
+-- ORD033 (60 Triệu)
+('ORD033','V087_1', 20, 3000000), -- 20 Boost (60tr)
+
+-- ORD034 (40 Triệu)
+('ORD034','V041_1', 16, 2500000), -- 16 GoodGirl (40tr)
+
+-- ORD035 (20 Triệu)
+('ORD035','V005_1', 20, 1000000), -- 20 Blazer (20tr)
+
+-- ORD036 (65 Triệu)
+('ORD036','V086_1', 26, 2500000), -- 26 AF1 (65tr)
+
+-- ORD037 (40 Triệu)
+('ORD037','V042_1', 12, 3200000), -- 12 Chanel (38.4tr)
+('ORD037','V026_1', 8, 200000),   -- 8 Son (1.6tr)
+
+-- ORD038 (20 Triệu)
+('ORD038','V060_2', 10, 1200000), -- 10 Vali xanh (12tr)
+('ORD038','V058_1', 20, 400000),  -- 20 Balo (8tr)
+
+-- ORD039 (50 Triệu)
+('ORD039','V087_1', 10, 3000000), -- 10 Boost (30tr)
+('ORD039','V086_1', 8, 2500000),  -- 8 AF1 (20tr)
+
+-- ORD040 (40 Triệu)
+('ORD040','V041_1', 16, 2500000), -- 16 GoodGirl (40tr)
+
+-- ORD041 (20 Triệu)
+('ORD041','V005_1', 20, 1000000), -- 20 Blazer (20tr)
+
+-- ORD042 (55 Triệu)
+('ORD042','V086_1', 22, 2500000), -- 22 AF1 (55tr)
+
+-- ORD043 (40 Triệu)
+('ORD043','V042_1', 12, 3200000), -- 12 Chanel (38.4tr)
+('ORD043','V026_1', 8, 200000),   -- 8 Son (1.6tr)
+
+-- ORD044 (20 Triệu)
+('ORD044','V060_1', 10, 1200000), -- 10 Vali Hồng (12tr)
+('ORD044','V058_1', 20, 400000);  -- 20 Balo (8tr)
+
+-- chèn sản phẩm
+INSERT INTO products (product_id, name, category_id, description, brand, base_price, cost_price) VALUES
+-- 1. Thời trang nữ (P001-P005)
+('P001', 'Đầm Maxi Voan Hoa', 1, 'Đầm đi biển', 'Zara', 450000, 250000),
+('P002', 'Áo Croptop Nữ', 1, 'Thun cotton', 'H&M', 150000, 80000),
+('P003', 'Quần Jeans Ống Rộng', 1, 'Hack dáng', 'Levis', 550000, 350000),
+('P004', 'Chân Váy Tennis', 1, 'Xếp ly ngắn', 'Local', 190000, 100000),
+('P005', 'Blazer Hàn Quốc', 1, 'Khoác nhẹ', 'Elise', 850000, 500000),
+
+-- 2. Thời trang nam (P006-P010)
+('P006', 'Sơ Mi Trắng Nam', 2, 'Oxford', 'Owen', 350000, 200000),
+('P007', 'Quần Âu Slimfit', 2, 'Vải không nhăn', 'Viettien', 450000, 280000),
+('P008', 'Áo Polo Cá Sấu', 2, 'Basic', 'Lacoste', 550000, 300000),
+('P009', 'Quần Short Kaki', 2, 'Dạo phố', 'Uniqlo', 250000, 150000),
+('P010', 'Áo Khoác Bomber', 2, 'Gió dù', 'Adidas', 750000, 450000),
+
+-- 3. Thời trang trẻ em (P011-P015)
+('P011', 'Váy Công Chúa', 3, 'Cho bé gái', 'BabyShop', 250000, 150000),
+('P012', 'Đồ Bộ Siêu Nhân', 3, 'Cho bé trai', 'Marvel', 180000, 100000),
+('P013', 'Áo Thun Hình Thú', 3, 'Cotton', 'Canifa', 120000, 70000),
+('P014', 'Quần Yếm Jeans', 3, 'Dễ thương', 'Gap', 320000, 200000),
+('P015', 'Body Chip Sơ Sinh', 3, 'Mềm mại', 'Nous', 90000, 50000),
+
+-- 4. Giày dép (P016-P020)
+('P016', 'Giày Cao Gót 7cm', 4, 'Mũi nhọn', 'Juno', 480000, 280000),
+('P017', 'Boot Da Cổ Thấp', 4, 'Phong cách', 'Zara', 650000, 400000),
+('P018', 'Giày Tây Nam', 4, 'Da bò', 'Đông Hải', 1200000, 800000),
+('P019', 'Giày Lười Loafer', 4, 'Êm chân', 'Gucci Fake', 550000, 300000),
+('P020', 'Giày Búp Bê Nơ', 4, 'Nhẹ nhàng', 'Vascara', 350000, 200000),
+
+-- 5. Phụ kiện thời trang (P021-P025)
+('P021', 'Kính Mát Chống UV', 5, 'Thời trang', 'GentleM', 550000, 400000),
+('P022', 'Mũ Lưỡi Trai NY', 5, 'Thêu logo', 'MLB', 650000, 400000),
+('P023', 'Thắt Lưng Da', 5, 'Khóa tự động', 'Pedro', 850000, 500000),
+('P024', 'Khăn Choàng Len', 5, 'Giữ ấm', 'Acne', 300000, 150000),
+('P025', 'Ví Da Mini', 5, 'Đựng thẻ', 'Charles&K', 450000, 250000),
+
+-- 6. Mỹ phẩm trang điểm (P026-P030)
+('P026', 'Son Kem Lì', 6, 'Màu đỏ gạch', 'BlackRouge', 180000, 100000),
+('P027', 'Cushion Kiềm Dầu', 6, 'Che phủ tốt', 'Lime', 320000, 200000),
+('P028', 'Kẻ Mắt Nước', 6, 'Không trôi', 'KissMe', 250000, 150000),
+('P029', 'Bảng Phấn Mắt', 6, 'Tone cam', '3CE', 380000, 250000),
+('P030', 'Má Hồng Kem', 6, 'Tự nhiên', 'Canmake', 190000, 110000),
+
+-- 7. Chăm sóc da (P031-P035)
+('P031', 'Sữa Rửa Mặt', 7, 'Dịu nhẹ', 'Cerave', 350000, 200000),
+('P032', 'Toner Hoa Cúc', 7, 'Cân bằng da', 'Kiehl', 850000, 600000),
+('P033', 'Serum Vitamin C', 7, 'Sáng da', 'Klairs', 350000, 200000),
+('P034', 'Kem Dưỡng B5', 7, 'Phục hồi', 'LaRoche', 450000, 300000),
+('P035', 'Kem Chống Nắng', 7, 'Nâng tone', 'Skin1004', 280000, 180000),
+
+-- 8. Chăm sóc tóc – cơ thể (P036-P040)
+('P036', 'Dầu Gội Bưởi', 8, 'Giảm rụng', 'Cocoon', 220000, 140000),
+('P037', 'Sữa Tắm Nước Hoa', 8, 'Thơm lâu', 'Tesori', 250000, 160000),
+('P038', 'Dầu Xả Mượt Tóc', 8, 'Phục hồi', 'Tsubaki', 180000, 110000),
+('P039', 'Tẩy Tế Bào Chết', 8, 'Cafe Đắk Lắk', 'Cocoon', 150000, 90000),
+('P040', 'Dưỡng Thể Body', 8, 'Trắng da', 'Vaseline', 130000, 80000),
+
+-- 9. Nước hoa (P041-P045)
+('P041', 'Nước Hoa GoodGirl', 9, 'Sexy', 'Carolina', 2500000, 1800000),
+('P042', 'Nước Hoa Bleu', 9, 'Nam tính', 'Chanel', 3200000, 2500000),
+('P043', 'Body Mist', 9, 'Hương hoa', 'Bath&Body', 280000, 180000),
+('P044', 'Nước Hoa Chiết', 9, '10ml', 'NoBrand', 150000, 80000),
+('P045', 'Sáp Thơm Phòng', 9, 'Thư giãn', 'Yankee', 350000, 200000),
+
+-- 10. Đồ lót (P046-P050)
+('P046', 'Áo Bra Ren', 10, 'Nâng ngực', 'Victoria', 350000, 150000),
+('P047', 'Quần Lót Cotton', 10, 'Set 3 cái', 'Muji', 150000, 80000),
+('P048', 'Đồ Ngủ 2 Dây', 10, 'Lụa satin', 'Vera', 450000, 250000),
+('P049', 'Boxer Nam', 10, 'Thun lạnh', 'Freeman', 120000, 60000),
+('P050', 'Áo Choàng Ngủ', 10, 'Sang trọng', 'Zara', 550000, 300000),
+
+-- 11. Trang sức (P051-P055)
+('P051', 'Nhẫn Bạc 925', 11, 'Đính đá', 'PNJ', 350000, 200000),
+('P052', 'Dây Chuyền', 11, 'Cỏ 4 lá', 'Swarovski', 1500000, 1000000),
+('P053', 'Bông Tai', 11, 'Ngọc trai', 'Local', 120000, 60000),
+('P054', 'Vòng Tay', 11, 'Phong thủy', 'Handmade', 250000, 100000),
+('P055', 'Lắc Chân', 11, 'Chuông kêu', 'PNJ', 280000, 150000),
+
+-- 12. Túi xách – Balo (P056-P060)
+('P056', 'Túi Tote Vải', 12, 'Đựng A4', 'Local', 80000, 40000),
+('P057', 'Túi Đeo Chéo', 12, 'Da PU', 'Zara', 450000, 280000),
+('P058', 'Balo Laptop', 12, 'Chống sốc', 'Xiaomi', 350000, 220000),
+('P059', 'Túi Kẹp Nách', 12, 'Hot trend', 'JW Pei', 850000, 500000),
+('P060', 'Vali Du Lịch', 12, 'Size 20', 'Lock&Lock', 1200000, 800000),
+
+-- 13. Set quà tặng (P061-P065)
+('P061', 'Set Sinh Nhật', 13, 'Son + Hoa', 'GiftShop', 550000, 350000),
+('P062', 'Hộp Valentine', 13, 'Socola', 'Meow', 350000, 200000),
+('P063', 'Combo Skincare', 13, '3 món', 'Innisfree', 850000, 600000),
+('P064', 'Set Nến Thơm', 13, 'Chill', 'Yankee', 450000, 250000),
+('P065', 'Quà Doanh Nghiệp', 13, 'Sổ bút', 'Biz', 650000, 400000),
+
+-- 14. Phụ kiện điện thoại (P066-P070)
+('P066', 'Ốp Lưng IP15', 14, 'Trong suốt', 'UAG', 950000, 600000),
+('P067', 'Kính Cường Lực', 14, 'Kingkong', 'Kingkong', 50000, 20000),
+('P068', 'Cáp Sạc Nhanh', 14, 'Type-C', 'Baseus', 120000, 70000),
+('P069', 'Tai Nghe BT', 14, 'Hoco', 'Hoco', 350000, 200000),
+('P070', 'Sạc Dự Phòng', 14, '10000mAh', 'Xiaomi', 250000, 180000),
+
+-- 15. Đồ thể thao (P071-P075)
+('P071', 'Áo Tập Gym', 15, 'Bra Sport', 'Nike', 450000, 250000),
+('P072', 'Legging Yoga', 15, 'Co giãn', 'Adidas', 550000, 300000),
+('P073', 'Áo Bóng Đá', 15, 'Thoáng khí', 'Puma', 200000, 100000),
+('P074', 'Găng Tay Gym', 15, 'Chống chai', 'GymShark', 150000, 80000),
+('P075', 'Tất Thể Thao', 15, 'Dày dặn', 'Nike', 80000, 40000),
+
+-- 16. Đồ ngủ – Pijama (P076-P080)
+('P076', 'Pijama Lụa', 16, 'Dài tay', 'Winny', 450000, 280000),
+('P077', 'Đồ Bộ Cotton', 16, 'Mặc nhà', 'Sunfly', 250000, 150000),
+('P078', 'Váy Ngủ Thun', 16, 'Dáng suông', 'Uniqlo', 300000, 180000),
+('P079', 'Pijama Nam Kẻ', 16, 'Cổ điển', 'Owen', 400000, 250000),
+('P080', 'Áo Ngủ Hình Thú', 16, 'Khủng long', 'Taobao', 220000, 120000),
+
+-- 17. Sandal – Dép (P081-P085)
+('P081', 'Dép Quai Ngang', 17, 'Nhựa mềm', 'Adidas', 350000, 200000),
+('P082', 'Sandal Đế Cói', 17, 'Vintage', 'ShoeX', 250000, 150000),
+('P083', 'Dép Sục Crocs', 17, 'Sticker', 'Crocs', 180000, 100000),
+('P084', 'Sandal Chiến Binh', 17, 'Cá tính', 'Zara', 400000, 250000),
+('P085', 'Dép Tổ Ong', 17, 'Huyền thoại', 'VN', 30000, 15000),
+
+-- 18. Sneaker – Giày thời trang (P086-P090)
+('P086', 'Sneaker AF1', 18, 'Trắng', 'Nike', 2500000, 1800000),
+('P087', 'Giày Chạy Bộ', 18, 'Boost', 'Adidas', 3000000, 2000000),
+('P088', 'Giày Canvas', 18, 'Cổ cao', 'Converse', 1500000, 900000),
+('P089', 'Giày Chunky', 18, 'Đế độn', 'MLB', 1800000, 1200000),
+('P090', 'Giày Slip-on', 18, 'Caro', 'Vans', 1200000, 700000);
+
+INSERT INTO product_variants (variant_id, product_id, color, size, stock_quantity, additional_price) VALUES
+-- P001: Đầm Maxi (2 Màu x 3 Size = 6 biến thể)
+('V001_1', 'P001', 'Trắng', 'S', 10, 0), ('V001_2', 'P001', 'Trắng', 'M', 10, 0), ('V001_3', 'P001', 'Trắng', 'L', 10, 0),
+('V001_4', 'P001', 'Vàng', 'S', 8, 0), ('V001_5', 'P001', 'Vàng', 'M', 8, 0), ('V001_6', 'P001', 'Vàng', 'L', 8, 0),
+
+-- P002: Áo Croptop (3 Màu x 2 Size = 6 biến thể)
+('V002_1', 'P002', 'Đen', 'S', 20, 0), ('V002_2', 'P002', 'Đen', 'M', 20, 0),
+('V002_3', 'P002', 'Trắng', 'S', 20, 0), ('V002_4', 'P002', 'Trắng', 'M', 20, 0),
+('V002_5', 'P002', 'Hồng', 'S', 15, 0), ('V002_6', 'P002', 'Hồng', 'M', 15, 0),
+
+-- P003: Quần Jeans (2 Màu x 3 Size = 6 biến thể)
+('V003_1', 'P003', 'Xanh Nhạt', '26', 12, 0), ('V003_2', 'P003', 'Xanh Nhạt', '27', 12, 0), ('V003_3', 'P003', 'Xanh Nhạt', '28', 12, 0),
+('V003_4', 'P003', 'Xanh Đậm', '26', 10, 0), ('V003_5', 'P003', 'Xanh Đậm', '27', 10, 0), ('V003_6', 'P003', 'Xanh Đậm', '28', 10, 0),
+
+-- P004 (4 biến thể) & P005 (3 biến thể)
+('V004_1', 'P004', 'Trắng', 'S', 25, 0), ('V004_2', 'P004', 'Trắng', 'M', 25, 0), ('V004_3', 'P004', 'Đen', 'S', 25, 0), ('V004_4', 'P004', 'Đen', 'M', 25, 0),
+('V005_1', 'P005', 'Be', 'S', 15, 0), ('V005_2', 'P005', 'Be', 'M', 15, 0), ('V005_3', 'P005', 'Nâu', 'S', 10, 0),
+
+-- P006: Sơ mi nam (2 Màu x 3 Size = 6 biến thể)
+('V006_1', 'P006', 'Trắng', '39', 20, 0), ('V006_2', 'P006', 'Trắng', '40', 20, 0), ('V006_3', 'P006', 'Trắng', '41', 20, 0),
+('V006_4', 'P006', 'Xanh Biển', '39', 15, 0), ('V006_5', 'P006', 'Xanh Biển', '40', 15, 0), ('V006_6', 'P006', 'Xanh Biển', '41', 15, 0),
+
+-- P007, P008, P009, P010 (Nam - 4 đến 5 biến thể)
+('V007_1', 'P007', 'Đen', '29', 20, 0), ('V007_2', 'P007', 'Đen', '30', 20, 0), ('V007_3', 'P007', 'Đen', '31', 20, 0), ('V007_4', 'P007', 'Xám', '29', 15, 0), ('V007_5', 'P007', 'Xám', '30', 15, 0),
+('V008_1', 'P008', 'Trắng', 'L', 30, 0), ('V008_2', 'P008', 'Trắng', 'XL', 30, 0), ('V008_3', 'P008', 'Đen', 'L', 30, 0), ('V008_4', 'P008', 'Đen', 'XL', 30, 0),
+('V009_1', 'P009', 'Kaki', '30', 25, 0), ('V009_2', 'P009', 'Kaki', '31', 25, 0), ('V009_3', 'P009', 'Rêu', '30', 25, 0),
+('V010_1', 'P010', 'Đen', 'L', 10, 0), ('V010_2', 'P010', 'Đen', 'XL', 10, 0), ('V010_3', 'P010', 'Xanh Rêu', 'L', 10, 0), ('V010_4', 'P010', 'Xanh Rêu', 'XL', 10, 0),
+
+-- Trẻ em (P011-P015)
+('V011_1', 'P011', 'Hồng', 'Size 2', 10, 0), ('V011_2', 'P011', 'Hồng', 'Size 4', 10, 0), ('V011_3', 'P011', 'Trắng', 'Size 2', 10, 0), ('V011_4', 'P011', 'Trắng', 'Size 4', 10, 0),
+('V012_1', 'P012', 'Đỏ', 'S', 20, 0), ('V012_2', 'P012', 'Đỏ', 'M', 20, 0), ('V012_3', 'P012', 'Xanh', 'S', 20, 0),
+('V013_1', 'P013', 'Vàng', '10kg', 30, 0), ('V013_2', 'P013', 'Cam', '10kg', 30, 0), ('V013_3', 'P013', 'Vàng', '15kg', 30, 0),
+('V014_1', 'P014', 'Jeans', 'Size 2', 15, 0), ('V014_2', 'P014', 'Jeans', 'Size 4', 15, 0),
+('V015_1', 'P015', 'Hồng', '0-3M', 50, 0), ('V015_2', 'P015', 'Xanh', '0-3M', 50, 0), ('V015_3', 'P015', 'Trắng', '3-6M', 50, 0),
+
+-- Đồ lót (P046-P050)
+('V046_1', 'P046', 'Đen', '34B', 20, 0), ('V046_2', 'P046', 'Đen', '36B', 20, 0), ('V046_3', 'P046', 'Da', '34B', 20, 0), ('V046_4', 'P046', 'Da', '36B', 20, 0),
+('V047_1', 'P047', 'Mix', 'M', 100, 0), ('V047_2', 'P047', 'Mix', 'L', 100, 0),
+('V048_1', 'P048', 'Đỏ', 'Freesize', 20, 0), ('V048_2', 'P048', 'Đen', 'Freesize', 20, 0), ('V048_3', 'P048', 'Hồng', 'Freesize', 20, 0),
+('V049_1', 'P049', 'Xám', 'L', 50, 0), ('V049_2', 'P049', 'Xám', 'XL', 50, 0), ('V049_3', 'P049', 'Đen', 'L', 50, 0), ('V049_4', 'P049', 'Đen', 'XL', 50, 0),
+('V050_1', 'P050', 'Trắng', 'Freesize', 10, 0), ('V050_2', 'P050', 'Hồng Nhạt', 'Freesize', 10, 0),
+
+-- Thể thao (P071-P075)
+('V071_1', 'P071', 'Đen', 'M', 30, 0), ('V071_2', 'P071', 'Đen', 'L', 30, 0), ('V071_3', 'P071', 'Hồng', 'M', 30, 0), ('V071_4', 'P071', 'Hồng', 'L', 30, 0),
+('V072_1', 'P072', 'Đen', 'S', 25, 0), ('V072_2', 'P072', 'Đen', 'M', 25, 0), ('V072_3', 'P072', 'Xanh Than', 'S', 25, 0),
+('V073_1', 'P073', 'Đỏ', 'L', 40, 0), ('V073_2', 'P073', 'Đỏ', 'XL', 40, 0), ('V073_3', 'P073', 'Trắng', 'L', 40, 0),
+('V074_1', 'P074', 'Đen', 'M', 15, 0), ('V074_2', 'P074', 'Đen', 'L', 15, 0),
+('V075_1', 'P075', 'Trắng', 'Freesize', 100, 0), ('V075_2', 'P075', 'Đen', 'Freesize', 100, 0),
+
+-- Đồ ngủ (P076-P080)
+('V076_1', 'P076', 'Hồng', 'L', 20, 0), ('V076_2', 'P076', 'Hồng', 'XL', 20, 0), ('V076_3', 'P076', 'Xanh Navy', 'L', 20, 0),
+('V077_1', 'P077', 'Vàng', 'M', 25, 0), ('V077_2', 'P077', 'Vàng', 'L', 25, 0), ('V077_3', 'P077', 'Cam', 'M', 25, 0),
+('V078_1', 'P078', 'Tím', 'Freesize', 30, 0), ('V078_2', 'P078', 'Hồng', 'Freesize', 30, 0),
+('V079_1', 'P079', 'Kẻ Xanh', 'L', 20, 0), ('V079_2', 'P079', 'Kẻ Xanh', 'XL', 20, 0), ('V079_3', 'P079', 'Kẻ Đỏ', 'L', 20, 0),
+('V080_1', 'P080', 'Xanh', 'Freesize', 15, 0), ('V080_2', 'P080', 'Vàng', 'Freesize', 15, 0);
+INSERT INTO product_variants (variant_id, product_id, color, size, stock_quantity, additional_price) VALUES
+-- P016: Cao gót (5 biến thể size)
+('V016_1', 'P016', 'Đen', '35', 10, 0), ('V016_2', 'P016', 'Đen', '36', 15, 0), ('V016_3', 'P016', 'Đen', '37', 15, 0), ('V016_4', 'P016', 'Đen', '38', 10, 0), ('V016_5', 'P016', 'Đen', '39', 5, 0),
+
+-- P017: Boot (4 biến thể)
+('V017_1', 'P017', 'Nâu', '37', 10, 0), ('V017_2', 'P017', 'Nâu', '38', 10, 0), ('V017_3', 'P017', 'Đen', '37', 10, 0), ('V017_4', 'P017', 'Đen', '38', 10, 0),
+
+-- P018: Giày tây (6 biến thể)
+('V018_1', 'P018', 'Đen', '39', 8, 0), ('V018_2', 'P018', 'Đen', '40', 8, 0), ('V018_3', 'P018', 'Đen', '41', 8, 0),
+('V018_4', 'P018', 'Nâu', '39', 8, 0), ('V018_5', 'P018', 'Nâu', '40', 8, 0), ('V018_6', 'P018', 'Nâu', '41', 8, 0),
+
+-- P019, P020
+('V019_1', 'P019', 'Đen', '39', 10, 0), ('V019_2', 'P019', 'Đen', '40', 10, 0), ('V019_3', 'P019', 'Đen', '41', 10, 0),
+('V020_1', 'P020', 'Kem', '36', 15, 0), ('V020_2', 'P020', 'Kem', '37', 15, 0), ('V020_3', 'P020', 'Hồng', '36', 15, 0), ('V020_4', 'P020', 'Hồng', '37', 15, 0),
+
+-- Sandal (P081-P085)
+('V081_1', 'P081', 'Đen', '39', 40, 0), ('V081_2', 'P081', 'Đen', '40', 40, 0), ('V081_3', 'P081', 'Trắng', '39', 40, 0), ('V081_4', 'P081', 'Trắng', '40', 40, 0),
+('V082_1', 'P082', 'Be', '36', 20, 0), ('V082_2', 'P082', 'Be', '37', 20, 0), ('V082_3', 'P082', 'Be', '38', 20, 0),
+('V083_1', 'P083', 'Trắng', '36', 30, 0), ('V083_2', 'P083', 'Trắng', '37', 30, 0), ('V083_3', 'P083', 'Hồng', '36', 30, 0), ('V083_4', 'P083', 'Hồng', '37', 30, 0),
+('V084_1', 'P084', 'Đen', '37', 15, 0), ('V084_2', 'P084', 'Đen', '38', 15, 0), ('V084_3', 'P084', 'Nâu', '37', 15, 0),
+('V085_1', 'P085', 'Vàng', 'L', 50, 0), ('V085_2', 'P085', 'Xanh', 'XL', 50, 0),
+
+-- Sneaker (P086-P090) - 6 size mỗi mẫu
+('V086_1', 'P086', 'Trắng', '37', 10, 0), ('V086_2', 'P086', 'Trắng', '38', 10, 0), ('V086_3', 'P086', 'Trắng', '39', 10, 0), ('V086_4', 'P086', 'Trắng', '40', 10, 0), ('V086_5', 'P086', 'Trắng', '41', 10, 0), ('V086_6', 'P086', 'Trắng', '42', 5, 20000),
+('V087_1', 'P087', 'Đen', '40', 10, 0), ('V087_2', 'P087', 'Đen', '41', 10, 0), ('V087_3', 'P087', 'Đen', '42', 10, 20000), ('V087_4', 'P087', 'Xám', '40', 10, 0), ('V087_5', 'P087', 'Xám', '41', 10, 0),
+('V088_1', 'P088', 'Vàng', '37', 15, 0), ('V088_2', 'P088', 'Vàng', '38', 15, 0), ('V088_3', 'P088', 'Đen', '37', 15, 0), ('V088_4', 'P088', 'Đen', '38', 15, 0),
+('V089_1', 'P089', 'Trắng', '37', 10, 0), ('V089_2', 'P089', 'Trắng', '38', 10, 0), ('V089_3', 'P089', 'Trắng', '39', 10, 0),
+('V090_1', 'P090', 'Caro', '39', 20, 0), ('V090_2', 'P090', 'Caro', '40', 20, 0), ('V090_3', 'P090', 'Caro', '41', 20, 0);
+INSERT INTO product_variants (variant_id, product_id, color, size, stock_quantity, additional_price) VALUES
+-- P026: Son (5 màu)
+('V026_1', 'P026', 'A12 - Đỏ Nâu', 'Thỏi', 50, 0), ('V026_2', 'P026', 'A06 - Đỏ Gạch', 'Thỏi', 50, 0),
+('V026_3', 'P026', 'A03 - Đỏ Cam', 'Thỏi', 50, 0), ('V026_4', 'P026', 'A21 - Hồng Đất', 'Thỏi', 30, 0), ('V026_5', 'P026', 'A37 - Cam Cháy', 'Thỏi', 30, 0),
+
+-- P027: Cushion (3 tone)
+('V027_1', 'P027', 'Tone 10', 'Hộp', 40, 0), ('V027_2', 'P027', 'Tone 20', 'Hộp', 40, 0), ('V027_3', 'P027', 'Tone 30', 'Hộp', 20, 0),
+
+-- P028, P029, P030
+('V028_1', 'P028', 'Đen', 'Cây', 50, 0), ('V028_2', 'P028', 'Nâu', 'Cây', 50, 0),
+('V029_1', 'P029', 'Tone Cam', 'Hộp', 25, 0), ('V029_2', 'P029', 'Tone Hồng', 'Hộp', 25, 0), ('V029_3', 'P029', 'Tone Nâu', 'Hộp', 15, 0),
+('V030_1', 'P030', 'Hồng Đào', 'Hộp', 30, 0), ('V030_2', 'P030', 'Đỏ Rượu', 'Hộp', 30, 0),
+
+-- P031-P035 (Skincare - Thường có 2 dung tích)
+('V031_1', 'P031', 'Xanh', '150ml', 50, 0),
+('V032_1', 'P032', 'Vàng', '250ml', 30, 0), ('V032_2', 'P032', 'Vàng', '500ml', 20, 150000),
+('V033_1', 'P033', 'Trong suốt', '35ml', 40, 0),
+('V034_1', 'P034', 'Trắng', '50ml', 40, 0), ('V034_2', 'P034', 'Trắng', '100ml', 20, 120000),
+('V035_1', 'P035', 'Vàng', '50ml', 50, 0), ('V035_2', 'P035', 'Vàng', '100ml', 30, 100000),
+
+-- P036-P040 (Tóc)
+('V036_1', 'P036', 'Xanh', '300ml', 30, 0), ('V036_2', 'P036', 'Xanh', '500ml', 20, 50000),
+('V037_1', 'P037', 'Hoa Sen', '500ml', 40, 0), ('V037_2', 'P037', 'Xạ Hương', '500ml', 40, 0), ('V037_3', 'P037', 'Thanh Long', '500ml', 40, 0),
+('V038_1', 'P038', 'Vàng', '450ml', 30, 0),
+('V039_1', 'P039', 'Nâu', '200ml', 35, 0), ('V039_2', 'P039', 'Nâu', '600ml', 20, 100000),
+('V040_1', 'P040', 'Hồng', '350ml', 50, 0), ('V040_2', 'P040', 'Vàng', '350ml', 50, 0),
+
+-- P041-P045 (Nước hoa - 3 dung tích)
+('V041_1', 'P041', 'Xanh', '30ml', 15, 0), ('V041_2', 'P041', 'Xanh', '50ml', 10, 800000), ('V041_3', 'P041', 'Xanh', '100ml', 5, 1500000),
+('V042_1', 'P042', 'Đen', '50ml', 10, 0), ('V042_2', 'P042', 'Đen', '100ml', 5, 900000),
+('V043_1', 'P043', 'Hồng', '236ml', 30, 0), ('V043_2', 'P043', 'Tím', '236ml', 30, 0),
+('V044_1', 'P044', 'GoodGirl', '10ml', 50, 0), ('V044_2', 'P044', 'Chanel', '10ml', 50, 0), ('V044_3', 'P044', 'Dior', '10ml', 50, 0),
+('V045_1', 'P045', 'Lavender', 'Hũ', 40, 0), ('V045_2', 'P045', 'Chanh Sả', 'Hũ', 40, 0);
+INSERT INTO product_variants (variant_id, product_id, color, size, stock_quantity, additional_price) VALUES
+-- P021-P025
+('V021_1', 'P021', 'Đen', 'Freesize', 10, 0), ('V021_2', 'P021', 'Trà', 'Freesize', 10, 0), ('V021_3', 'P021', 'Trong', 'Freesize', 10, 0),
+('V022_1', 'P022', 'Đen', 'Freesize', 25, 0), ('V022_2', 'P022', 'Trắng', 'Freesize', 25, 0), ('V022_3', 'P022', 'Xanh', 'Freesize', 25, 0),
+('V023_1', 'P023', 'Đen', '110cm', 20, 0), ('V023_2', 'P023', 'Đen', '120cm', 15, 0),
+('V024_1', 'P024', 'Xám', 'Freesize', 20, 0), ('V024_2', 'P024', 'Be', 'Freesize', 20, 0), ('V024_3', 'P024', 'Đỏ', 'Freesize', 20, 0),
+('V025_1', 'P025', 'Đen', 'Mini', 30, 0), ('V025_2', 'P025', 'Hồng', 'Mini', 30, 0),
+
+-- P051-P055 (Trang sức - Size nhẫn)
+('V051_1', 'P051', 'Bạc', 'Size 9', 10, 0), ('V051_2', 'P051', 'Bạc', 'Size 10', 10, 0), ('V051_3', 'P051', 'Bạc', 'Size 11', 10, 0),
+('V052_1', 'P052', 'Vàng', '45cm', 5, 0), ('V052_2', 'P052', 'Bạc', '45cm', 5, -100000),
+('V053_1', 'P053', 'Trắng', 'Freesize', 20, 0),
+('V054_1', 'P054', 'Nâu', '10mm', 15, 0), ('V054_2', 'P054', 'Đen', '12mm', 15, 0), ('V054_3', 'P054', 'Xanh', '10mm', 15, 0),
+('V055_1', 'P055', 'Bạc', 'Freesize', 12, 0),
+
+-- P056-P060 (Túi)
+('V056_1', 'P056', 'Trắng', 'A4', 80, 0), ('V056_2', 'P056', 'Đen', 'A4', 80, 0),
+('V057_1', 'P057', 'Đen', 'Size 20', 20, 0), ('V057_2', 'P057', 'Nâu', 'Size 20', 20, 0),
+('V058_1', 'P058', 'Xám', '14 inch', 30, 0), ('V058_2', 'P058', 'Xám', '15.6 inch', 30, 20000), ('V058_3', 'P058', 'Đen', '15.6 inch', 30, 20000),
+('V059_1', 'P059', 'Tím', 'Size 22', 15, 0), ('V059_2', 'P059', 'Trắng', 'Size 22', 15, 0),
+('V060_1', 'P060', 'Hồng', 'Size 20', 10, 0), ('V060_2', 'P060', 'Xanh', 'Size 24', 8, 200000), ('V060_3', 'P060', 'Đen', 'Size 28', 5, 400000),
+
+-- P061-P065 (Quà)
+('V061_1', 'P061', 'Đỏ', 'Hộp', 10, 0), ('V061_2', 'P061', 'Hồng', 'Hộp', 10, 0),
+('V062_1', 'P062', 'Nâu', 'Hộp', 15, 0),
+('V063_1', 'P063', 'Xanh', 'Set', 20, 0),
+('V064_1', 'P064', 'Trắng', 'Set 3', 25, 0), ('V064_2', 'P064', 'Đỏ', 'Set 3', 25, 0),
+('V065_1', 'P065', 'Đen', 'Set', 10, 0),
+
+-- P066-P070 (Điện thoại - 6 biến thể đời máy)
+('V066_1', 'P066', 'Trong', 'IP13', 30, 0), ('V066_2', 'P066', 'Trong', 'IP14', 30, 0), ('V066_3', 'P066', 'Trong', 'IP15', 30, 0), ('V066_4', 'P066', 'Trong', 'IP15 Pro', 30, 10000),
+('V067_1', 'P067', 'Trong', 'IP13', 50, 0), ('V067_2', 'P067', 'Trong', 'IP14', 50, 0), ('V067_3', 'P067', 'Trong', 'IP15', 50, 0),
+('V068_1', 'P068', 'Trắng', '1m', 80, 0), ('V068_2', 'P068', 'Trắng', '2m', 60, 20000), ('V068_3', 'P068', 'Đen', '1m', 80, 0),
+('V069_1', 'P069', 'Trắng', 'Freesize', 40, 0), ('V069_2', 'P069', 'Đen', 'Freesize', 40, 0),
+('V070_1', 'P070', 'Đen', '10000mAh', 30, 0), ('V070_2', 'P070', 'Trắng', '20000mAh', 20, 100000), ('V070_3', 'P070', 'Hồng', '10000mAh', 30, 0);
+
+INSERT INTO product_images (product_id, color, image_url, sort_order) VALUES
+-- P001: Đầm Maxi
+('P001', 'Trắng', 'https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=500', 1),
+('P001', 'Vàng', 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=500', 2),
+-- P002: Áo Croptop
+('P002', 'Đen', 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=500', 1),
+('P002', 'Trắng', 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=500', 2),
+-- P003: Quần Jeans
+('P003', 'Xanh Nhạt', 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=500', 1),
+-- P004: Chân váy
+('P004', 'Trắng', 'https://images.unsplash.com/photo-1582142327527-5e819b972e8f?w=500', 1),
+-- P005: Blazer
+('P005', 'Be', 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=500', 1),
+
+-- P006: Sơ mi nam
+('P006', 'Trắng', 'https://images.unsplash.com/photo-1620012253295-c15cc3e65df4?w=500', 1),
+-- P007: Quần âu
+('P007', 'Đen', 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=500', 1),
+-- P008: Polo
+('P008', 'Trắng', 'https://images.unsplash.com/photo-1626557981101-aae6f84aa6a8?w=500', 1),
+-- P009: Short
+('P009', 'Kaki', 'https://images.unsplash.com/photo-1591195853828-11db59a44f6b?w=500', 1),
+-- P010: Bomber
+('P010', 'Đen', 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=500', 1),
+
+-- P011: Váy bé gái
+('P011', 'Hồng', 'https://images.unsplash.com/photo-1518831959646-742c3a14ebf7?w=500', 1),
+-- P012: Đồ siêu nhân (Đại diện)
+('P012', 'Đỏ', 'https://images.unsplash.com/photo-1622290291468-a28f7a7dc6a8?w=500', 1),
+-- P013: Áo thun bé
+('P013', 'Vàng', 'https://images.unsplash.com/photo-1519278409-1f56fdda78bf?w=500', 1),
+-- P014: Yếm
+('P014', 'Jeans', 'https://images.unsplash.com/photo-1519457431-44ccd64a579b?w=500', 1),
+-- P015: Body sơ sinh
+('P015', 'Trắng', 'https://images.unsplash.com/photo-1522771930-78848d9293e8?w=500', 1),
+
+-- P046: Bra
+('P046', 'Đen', 'https://images.unsplash.com/photo-1574660948957-c3132e850eb2?w=500', 1),
+-- P047: Quần lót
+('P047', 'Mix', 'https://images.unsplash.com/photo-1598522194689-535359149021?w=500', 1),
+-- P048: Đồ ngủ dây
+('P048', 'Đỏ', 'https://images.unsplash.com/photo-1605763240004-7e93b172d754?w=500', 1),
+-- P049: Boxer nam
+('P049', 'Xám', 'https://images.unsplash.com/photo-1582260656094-1a9807567781?w=500', 1),
+-- P050: Áo choàng
+('P050', 'Trắng', 'https://images.unsplash.com/photo-1584208076634-1cb81c01540d?w=500', 1),
+
+-- P071: Gym Bra
+('P071', 'Đen', 'https://images.unsplash.com/photo-1571731956672-f2b94d7dd0cb?w=500', 1),
+-- P072: Legging
+('P072', 'Đen', 'https://images.unsplash.com/photo-1506619216599-9d16d0903dfd?w=500', 1),
+-- P073: Áo bóng đá
+('P073', 'Đỏ', 'https://images.unsplash.com/photo-1517466787929-bc90951d0974?w=500', 1),
+-- P074: Găng tay
+('P074', 'Đen', 'https://images.unsplash.com/photo-1599058945522-28d584b6f0ff?w=500', 1),
+-- P075: Tất
+('P075', 'Trắng', 'https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=500', 1),
+
+-- P076: Pijama Lụa
+('P076', 'Hồng', 'https://images.unsplash.com/photo-1588670139196-8acdd5743a6d?w=500', 1),
+-- P077: Đồ bộ
+('P077', 'Vàng', 'https://images.unsplash.com/photo-1582234057917-0628e93297a0?w=500', 1),
+-- P078: Váy ngủ
+('P078', 'Tím', 'https://images.unsplash.com/photo-1571513722275-4b41940f54b8?w=500', 1),
+-- P079: Pijama nam
+('P079', 'Kẻ Xanh', 'https://images.unsplash.com/photo-1530999088686-2187f48cb94b?w=500', 1),
+-- P080: Hình thú
+('P080', 'Xanh', 'https://images.unsplash.com/photo-1606132773410-74cb42f1f83c?w=500', 1);
+INSERT INTO product_images (product_id, color, image_url, sort_order) VALUES
+-- P016: Cao gót
+('P016', 'Đen', 'https://images.unsplash.com/photo-1543163521-1bf539c55dd2?w=500', 1),
+-- P017: Boot
+('P017', 'Nâu', 'https://images.unsplash.com/photo-1608231387042-66d1773070a5?w=500', 1),
+-- P018: Giày tây
+('P018', 'Đen', 'https://images.unsplash.com/photo-1614252369475-531eba835eb1?w=500', 1),
+-- P019: Loafer
+('P019', 'Đen', 'https://images.unsplash.com/photo-1533867617858-e7b97e060509?w=500', 1),
+-- P020: Búp bê
+('P020', 'Kem', 'https://images.unsplash.com/photo-1535043934128-cf0b28d52f95?w=500', 1),
+
+-- P081: Dép quai ngang
+('P081', 'Đen', 'https://images.unsplash.com/photo-1603808033192-082d6919d3e1?w=500', 1),
+-- P082: Sandal cói
+('P082', 'Be', 'https://images.unsplash.com/photo-1603487742187-560248443567?w=500', 1),
+-- P083: Crocs (Sục)
+('P083', 'Trắng', 'https://images.unsplash.com/photo-1598305096536-24e532b2609c?w=500', 1),
+-- P084: Sandal chiến binh
+('P084', 'Đen', 'https://images.unsplash.com/photo-1562273138-f46be4ebdf33?w=500', 1),
+-- P085: Tổ ong (Sử dụng ảnh dép nhựa đại diện)
+('P085', 'Vàng', 'https://images.unsplash.com/photo-1549646960-e4a806952724?w=500', 1),
+
+-- P086: Sneaker AF1
+('P086', 'Trắng', 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500', 1),
+-- P087: Boost
+('P087', 'Đen', 'https://images.unsplash.com/photo-1551107696-a4b0c5a0d9a2?w=500', 1),
+-- P088: Converse Canvas
+('P088', 'Vàng', 'https://images.unsplash.com/photo-1607522370275-f14206abe5d3?w=500', 1),
+-- P089: Chunky (MLB Style)
+('P089', 'Trắng', 'https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=500', 1),
+-- P090: Slip-on (Vans Style)
+('P090', 'Caro', 'https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?w=500', 1);
+INSERT INTO product_images (product_id, color, image_url, sort_order) VALUES
+-- P026: Son
+('P026', 'A12 - Đỏ Nâu', 'https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=500', 1),
+-- P027: Cushion
+('P027', 'Tone 10', 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=500', 1),
+-- P028: Kẻ mắt
+('P028', 'Đen', 'https://images.unsplash.com/photo-1631214503851-a51e50f3ec5f?w=500', 1),
+-- P029: Phấn mắt
+('P029', 'Tone Cam', 'https://images.unsplash.com/photo-1596462502278-27bfdd403348?w=500', 1),
+-- P030: Má hồng
+('P030', 'Hồng Đào', 'https://images.unsplash.com/photo-1616683693504-3ea7e9ad6fec?w=500', 1),
+
+-- P031: Sữa rửa mặt
+('P031', 'Xanh', 'https://images.unsplash.com/photo-1556228578-8d89f5538338?w=500', 1),
+-- P032: Toner
+('P032', 'Vàng', 'https://images.unsplash.com/photo-1620916297397-a4a5402a3c6c?w=500', 1),
+-- P033: Serum
+('P033', 'Trong suốt', 'https://images.unsplash.com/photo-1620917670397-4477b767d603?w=500', 1),
+-- P034: Kem dưỡng
+('P034', 'Trắng', 'https://images.unsplash.com/photo-1611930022073-b7a4ba5fcccd?w=500', 1),
+-- P035: Kem chống nắng
+('P035', 'Vàng', 'https://images.unsplash.com/photo-1563632997-748439da5252?w=500', 1),
+
+-- P036: Dầu gội
+('P036', 'Xanh', 'https://images.unsplash.com/photo-1631729371254-42c2892f0e6e?w=500', 1),
+-- P037: Sữa tắm
+('P037', 'Hoa Sen', 'https://images.unsplash.com/photo-1608248597279-f99d160bfbc8?w=500', 1),
+-- P038: Dầu xả
+('P038', 'Vàng', 'https://images.unsplash.com/photo-1526947425960-945c6e72858f?w=500', 1),
+-- P039: Tẩy da chết
+('P039', 'Nâu', 'https://images.unsplash.com/photo-1610464670267-36e3c03a9749?w=500', 1),
+-- P040: Dưỡng thể
+('P040', 'Hồng', 'https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=500', 1),
+
+-- P041: Nước hoa (Guốc)
+('P041', 'Xanh', 'https://images.unsplash.com/photo-1541643600914-78b084683601?w=500', 1),
+-- P042: Nước hoa nam (Chanel vibe)
+('P042', 'Đen', 'https://images.unsplash.com/photo-1523293188086-b512669486ad?w=500', 1),
+-- P043: Mist
+('P043', 'Hồng', 'https://images.unsplash.com/photo-1622359247656-749e70197931?w=500', 1),
+-- P044: Nước hoa chiết
+('P044', 'GoodGirl', 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=500', 1),
+-- P045: Nến thơm
+('P045', 'Lavender', 'https://images.unsplash.com/photo-1602143407151-0111419516eb?w=500', 1);
+INSERT INTO product_images (product_id, color, image_url, sort_order) VALUES
+-- P021: Kính
+('P021', 'Đen', 'https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=500', 1),
+-- P022: Mũ
+('P022', 'Đen', 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=500', 1),
+-- P023: Thắt lưng
+('P023', 'Đen', 'https://images.unsplash.com/photo-1624222247344-550fb60583dc?w=500', 1),
+-- P024: Khăn
+('P024', 'Xám', 'https://images.unsplash.com/photo-1608460596395-57d0774a382c?w=500', 1),
+-- P025: Ví
+('P025', 'Đen', 'https://images.unsplash.com/photo-1627123424574-724758594e93?w=500', 1),
+
+-- P051: Nhẫn
+('P051', 'Bạc', 'https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=500', 1),
+-- P052: Dây chuyền
+('P052', 'Vàng', 'https://images.unsplash.com/photo-1599643478518-17488fbbcd75?w=500', 1),
+-- P053: Bông tai
+('P053', 'Trắng', 'https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=500', 1),
+-- P054: Vòng tay
+('P054', 'Nâu', 'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=500', 1),
+-- P055: Lắc chân
+('P055', 'Bạc', 'https://images.unsplash.com/photo-1618403088890-3d13418274a4?w=500', 1),
+
+-- P056: Tote
+('P056', 'Trắng', 'https://images.unsplash.com/photo-1559563458-527698bf5295?w=500', 1),
+-- P057: Túi chéo
+('P057', 'Đen', 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=500', 1),
+-- P058: Balo
+('P058', 'Xám', 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=500', 1),
+-- P059: Kẹp nách
+('P059', 'Tím', 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=500', 1),
+-- P060: Vali
+('P060', 'Hồng', 'https://images.unsplash.com/photo-1565026057447-bc90a3dceb87?w=500', 1),
+
+-- P061: Quà sinh nhật
+('P061', 'Đỏ', 'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=500', 1),
+-- P062: Valentine
+('P062', 'Nâu', 'https://images.unsplash.com/photo-1544521094-a15d045d614d?w=500', 1),
+-- P063: Set skincare
+('P063', 'Xanh', 'https://images.unsplash.com/photo-1617897903246-719242758050?w=500', 1),
+-- P064: Nến thơm
+('P064', 'Trắng', 'https://images.unsplash.com/photo-1603006905003-be475563bc59?w=500', 1),
+-- P065: Sổ bút
+('P065', 'Đen', 'https://images.unsplash.com/photo-1544816155-12df9643f363?w=500', 1),
+
+-- P066: Ốp lưng
+('P066', 'Trong', 'https://images.unsplash.com/photo-1603539276945-4702f7823e44?w=500', 1),
+-- P067: Cường lực (Minh họa)
+('P067', 'Trong', 'https://images.unsplash.com/photo-1616423664045-667746979203?w=500', 1),
+-- P068: Cáp sạc
+('P068', 'Trắng', 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=500', 1),
+-- P069: Tai nghe
+('P069', 'Trắng', 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=500', 1),
+-- P070: Sạc dự phòng
+('P070', 'Đen', 'https://images.unsplash.com/photo-1609560029280-99b50e2c1a85?w=500', 1);
 
 -- khách hàng
 INSERT INTO customers (customer_id, user_id, full_name, email, phone, address, created_at, updated_at) VALUES
-('CUS1', 'CUS1', 'Đặng Thị Ngọc', 'dặngthingoc@example.com', '0900100001', '87 Nguyễn Trãi, Hà Nội', '2024-11-01', '2024-11-01'),
-('CUS2', 'CUS2', 'Phạm Văn Quang', 'phamvanquang@example.com', '0900100002', '88 Trần Hưng Đạo, Hà Nội', '2024-11-02', '2024-11-02'),
-('CUS3', 'CUS3', 'Đỗ Thị Thu', 'dỗthithu@example.com', '0900100003', '27 Hai Bà Trưng, Hà Nội', '2024-11-03', '2024-11-03'),
-('CUS4', 'CUS4', 'Đỗ Văn Đông', 'dỗvandong@example.com', '0900100004', '187 Bà Triệu, Hà Nội', '2024-11-04', '2024-11-04'),
-('CUS5', 'CUS5', 'Võ Văn Tùng', 'vovantung@example.com', '0900100005', '179 Phan Chu Trinh, Hà Nội', '2024-11-05', '2024-11-05'),
-('CUS6', 'CUS6', 'Đỗ Văn Kiên', 'dỗvankien@example.com', '0900100006', '125 Nguyễn Du, Hà Nội', '2024-11-06', '2024-11-06'),
-('CUS7', 'CUS7', 'Hoàng Văn Đông', 'hoangvandong@example.com', '0900100007', '168 Trần Phú, Hà Nội', '2024-11-07', '2024-11-07'),
-('CUS8', 'CUS8', 'Trương Văn Huy', 'truongvanhuy@example.com', '0900100008', '13 Lý Thường Kiệt, Hà Nội', '2024-11-08', '2024-11-08'),
-('CUS9', 'CUS9', 'Lê Văn Cường', 'levancuờng@example.com', '0900100009', '13 Lê Lợi, Hà Nội', '2024-11-09', '2024-11-09'),
-('CUS10', 'CUS10', 'Đặng Văn An', 'dặngvanan@example.com', '0900100010', '144 Nguyễn Trãi, Hà Nội', '2024-11-10', '2024-11-10'),
-('CUS11', 'CUS11', 'Trần Thị Lan', 'trầnthilan@example.com', '0900100011', '128 Trần Hưng Đạo, Hà Nội', '2024-11-11', '2024-11-11'),
-('CUS12', 'CUS12', 'Đặng Văn Cường', 'dặngvancuờng@example.com', '0900100012', '96 Hai Bà Trưng, Hà Nội', '2024-11-12', '2024-11-12'),
-('CUS13', 'CUS13', 'Đặng Thị Bình', 'dặngthibinh@example.com', '0900100013', '131 Bà Triệu, Hà Nội', '2024-11-13', '2024-11-13'),
-('CUS14', 'CUS14', 'Phạm Văn Hoàng', 'phamvanhoang@example.com', '0900100014', '120 Phan Chu Trinh, Hà Nội', '2024-11-14', '2024-11-14'),
-('CUS15', 'CUS15', 'Đỗ Văn Huy', 'dỗvanhuy@example.com', '0900100015', '182 Nguyễn Du, Hà Nội', '2024-11-15', '2024-11-15'),
-('CUS16', 'CUS16', 'Hoàng Văn An', 'hoangvanan@example.com', '0900100016', '92 Trần Phú, Hà Nội', '2024-11-16', '2024-11-16'),
-('CUS17', 'CUS17', 'Nguyễn Văn Nam', 'nguyễnvannam@example.com', '0900100017', '145 Lý Thường Kiệt, Hà Nội', '2024-11-17', '2024-11-17'),
-('CUS18', 'CUS18', 'Trần Thị Hạnh', 'trầnthihanh@example.com', '0900100018', '83 Lê Lợi, Hà Nội', '2024-11-18', '2024-11-18'),
-('CUS19', 'CUS19', 'Lê Văn Tùng', 'levantung@example.com', '0900100019', '95 Nguyễn Trãi, Hà Nội', '2024-11-19', '2024-11-19'),
-('CUS20', 'CUS20', 'Đỗ Văn Quang', 'dỗvanquang@example.com', '0900100020', '133 Trần Hưng Đạo, Hà Nội', '2024-11-20', '2024-11-20'),
-('CUS21', 'CUS21', 'Đặng Thị Phương', 'dặngthiphuong@example.com', '0900100021', '62 Hai Bà Trưng, Hà Nội', '2024-11-21', '2024-11-21'),
-('CUS22', 'CUS22', 'Phạm Thị Phương', 'phamthiphuong@example.com', '0900100022', '10 Bà Triệu, Hà Nội', '2024-11-22', '2024-11-22'),
-('CUS23', 'CUS23', 'Lê Văn Kiên', 'levankien@example.com', '0900100023', '158 Phan Chu Trinh, Hà Nội', '2024-11-23', '2024-11-23'),
-('CUS24', 'CUS24', 'Lê Văn Phúc', 'levanphuc@example.com', '0900100024', '3 Nguyễn Du, Hà Nội', '2024-11-24', '2024-11-24'),
-('CUS25', 'CUS25', 'Nguyễn Thị Ngọc', 'nguyễnthingoc@example.com', '0900100025', '134 Trần Phú, Hà Nội', '2024-11-25', '2024-11-25'),
-('CUS26', 'CUS26', 'Phan Thị Dung', 'phanthidung@example.com', '0900100026', '120 Lý Thường Kiệt, Hà Nội', '2024-11-26', '2024-11-26'),
-('CUS27', 'CUS27', 'Trương Văn Quang', 'truongvanquang@example.com', '0900100027', '70 Lê Lợi, Hà Nội', '2024-11-27', '2024-11-27'),
-('CUS28', 'CUS28', 'Lê Thị Lan', 'lethilan@example.com', '0900100028', '20 Nguyễn Trãi, Hà Nội', '2024-11-28', '2024-11-28'),
-('CUS29', 'CUS29', 'Phạm Văn Kiên', 'phamvankien@example.com', '0900100029', '189 Trần Hưng Đạo, Hà Nội', '2024-11-29', '2024-11-29'),
-('CUS30', 'CUS30', 'Nguyễn Thị Mai', 'nguyễnthimai@example.com', '0900100030', '184 Hai Bà Trưng, Hà Nội', '2024-11-30', '2024-11-30'),
-('CUS31', 'CUS31', 'Trương Thị Phương', 'truongthiphuong@example.com', '0900100031', '169 Bà Triệu, Hà Nội', '2024-11-01', '2024-11-01'),
-('CUS32', 'CUS32', 'Hoàng Thị Lan', 'hoangthilan@example.com', '0900100032', '89 Phan Chu Trinh, Hà Nội', '2024-11-02', '2024-11-02'),
-('CUS33', 'CUS33', 'Phạm Thị Hạnh', 'phamthihanh@example.com', '0900100033', '124 Nguyễn Du, Hà Nội', '2024-11-03', '2024-11-03'),
-('CUS34', 'CUS34', 'Võ Văn Phúc', 'vovanphuc@example.com', '0900100034', '163 Trần Phú, Hà Nội', '2024-11-04', '2024-11-04'),
-('CUS35', 'CUS35', 'Võ Thị Lan', 'vothilan@example.com', '0900100035', '72 Lý Thường Kiệt, Hà Nội', '2024-11-05', '2024-11-05'),
-('CUS36', 'CUS36', 'Hoàng Văn Hoàng', 'hoangvanhoang@example.com', '0900100036', '97 Lê Lợi, Hà Nội', '2024-11-06', '2024-11-06'),
-('CUS37', 'CUS37', 'Hoàng Văn Phúc', 'hoangvanphuc@example.com', '0900100037', '9 Nguyễn Trãi, Hà Nội', '2024-11-07', '2024-11-07'),
-('CUS38', 'CUS38', 'Hoàng Văn Cường', 'hoangvancuờng@example.com', '0900100038', '137 Trần Hưng Đạo, Hà Nội', '2024-11-08', '2024-11-08'),
-('CUS39', 'CUS39', 'Nguyễn Văn Cường', 'nguyễnvancuờng@example.com', '0900100039', '2 Hai Bà Trưng, Hà Nội', '2024-11-09', '2024-11-09'),
-('CUS40', 'CUS40', 'Phạm Văn Kiên', 'phamvankien@example.com', '0900100040', '83 Bà Triệu, Hà Nội', '2024-11-10', '2024-11-10'),
-('CUS41', 'CUS41', 'Võ Thị Ngọc', 'vothingoc@example.com', '0900100041', '145 Phan Chu Trinh, Hà Nội', '2024-11-11', '2024-11-11'),
-('CUS42', 'CUS42', 'Đỗ Thị Hạnh', 'dỗthihanh@example.com', '0900100042', '127 Nguyễn Du, Hà Nội', '2024-11-12', '2024-11-12'),
-('CUS43', 'CUS43', 'Lê Thị Phương', 'lethiphuong@example.com', '0900100043', '129 Trần Phú, Hà Nội', '2024-11-13', '2024-11-13'),
-('CUS44', 'CUS44', 'Hoàng Văn Nam', 'hoangvannam@example.com', '0900100044', '135 Lý Thường Kiệt, Hà Nội', '2024-11-14', '2024-11-14'),
-('CUS45', 'CUS45', 'Đặng Thị Ngọc', 'dặngthingoc@example.com', '0900100045', '136 Lê Lợi, Hà Nội', '2024-11-15', '2024-11-15'),
-('CUS46', 'CUS46', 'Lê Văn Tùng', 'levantung@example.com', '0900100046', '140 Nguyễn Trãi, Hà Nội', '2024-11-16', '2024-11-16'),
-('CUS47', 'CUS47', 'Lê Thị Hạnh', 'lethihanh@example.com', '0900100047', '112 Trần Hưng Đạo, Hà Nội', '2024-11-17', '2024-11-17'),
-('CUS48', 'CUS48', 'Võ Thị Lan', 'vothilan@example.com', '0900100048', '116 Hai Bà Trưng, Hà Nội', '2024-11-18', '2024-11-18'),
-('CUS49', 'CUS49', 'Hoàng Thị Thu', 'hoangthithu@example.com', '0900100049', '189 Bà Triệu, Hà Nội', '2024-11-19', '2024-11-19'),
-('CUS50', 'CUS50', 'Nguyễn Thị Ngọc', 'nguyễnthingoc@example.com', '0900100050', '71 Phan Chu Trinh, Hà Nội', '2024-11-20', '2024-11-20'),
-('CUS51', 'CUS51', 'Võ Văn Kiên', 'vovankien@example.com', '0900100051', '178 Nguyễn Du, Hà Nội', '2024-11-21', '2024-11-21'),
-('CUS52', 'CUS52', 'Trương Văn Phúc', 'truongvanphuc@example.com', '0900100052', '57 Trần Phú, Hà Nội', '2024-11-22', '2024-11-22'),
-('CUS53', 'CUS53', 'Nguyễn Văn Cường', 'nguyễnvancuờng@example.com', '0900100053', '64 Lý Thường Kiệt, Hà Nội', '2024-11-23', '2024-11-23'),
-('CUS54', 'CUS54', 'Phạm Thị Lan', 'phamthilan@example.com', '0900100054', '23 Lê Lợi, Hà Nội', '2024-11-24', '2024-11-24'),
-('CUS55', 'CUS55', 'Trương Thị Hạnh', 'truongthihanh@example.com', '0900100055', '191 Nguyễn Trãi, Hà Nội', '2024-11-25', '2024-11-25'),
-('CUS56', 'CUS56', 'Phan Thị Ngọc', 'phanthingoc@example.com', '0900100056', '118 Trần Hưng Đạo, Hà Nội', '2024-11-26', '2024-11-26'),
-('CUS57', 'CUS57', 'Hoàng Thị Mai', 'hoangthimai@example.com', '0900100057', '164 Hai Bà Trưng, Hà Nội', '2024-11-27', '2024-11-27'),
-('CUS58', 'CUS58', 'Hoàng Văn Kiên', 'hoangvankien@example.com', '0900100058', '166 Bà Triệu, Hà Nội', '2024-11-28', '2024-11-28'),
-('CUS59', 'CUS59', 'Phan Văn Quang', 'phanvanquang@example.com', '0900100059', '179 Phan Chu Trinh, Hà Nội', '2024-11-29', '2024-11-29'),
-('CUS60', 'CUS60', 'Nguyễn Văn Kiên', 'nguyễnvankien@example.com', '0900100060', '122 Nguyễn Du, Hà Nội', '2024-11-30', '2024-11-30'),
-('CUS61', 'CUS61', 'Hoàng Thị Lan', 'hoangthilan@example.com', '0900100061', '46 Trần Phú, Hà Nội', '2024-11-01', '2024-11-01'),
-('CUS62', 'CUS62', 'Trương Văn Đông', 'truongvandong@example.com', '0900100062', '181 Lý Thường Kiệt, Hà Nội', '2024-11-02', '2024-11-02'),
-('CUS63', 'CUS63', 'Lê Thị Lan', 'lethilan@example.com', '0900100063', '164 Lê Lợi, Hà Nội', '2024-11-03', '2024-11-03'),
-('CUS64', 'CUS64', 'Trần Thị Bình', 'trầnthibinh@example.com', '0900100064', '48 Nguyễn Trãi, Hà Nội', '2024-11-04', '2024-11-04'),
-('CUS65', 'CUS65', 'Đặng Thị Lan', 'dặngthilan@example.com', '0900100065', '39 Trần Hưng Đạo, Hà Nội', '2024-11-05', '2024-11-05'),
-('CUS66', 'CUS66', 'Hoàng Văn Tùng', 'hoangvantung@example.com', '0900100066', '13 Hai Bà Trưng, Hà Nội', '2024-11-06', '2024-11-06'),
-('CUS67', 'CUS67', 'Đỗ Văn An', 'dỗvanan@example.com', '0900100067', '31 Bà Triệu, Hà Nội', '2024-11-07', '2024-11-07'),
-('CUS68', 'CUS68', 'Phan Thị Phương', 'phanthiphuong@example.com', '0900100068', '87 Phan Chu Trinh, Hà Nội', '2024-11-08', '2024-11-08'),
-('CUS69', 'CUS69', 'Nguyễn Văn Quang', 'nguyễnvanquang@example.com', '0900100069', '85 Nguyễn Du, Hà Nội', '2024-11-09', '2024-11-09'),
-('CUS70', 'CUS70', 'Hoàng Thị Phương', 'hoangthiphuong@example.com', '0900100070', '11 Trần Phú, Hà Nội', '2024-11-10', '2024-11-10'),
-('CUS71', 'CUS71', 'Phan Thị Mai', 'phanthimai@example.com', '0900100071', '117 Lý Thường Kiệt, Hà Nội', '2024-11-11', '2024-11-11'),
-('CUS72', 'CUS72', 'Võ Thị Dung', 'vothidung@example.com', '0900100072', '30 Lê Lợi, Hà Nội', '2024-11-12', '2024-11-12'),
-('CUS73', 'CUS73', 'Đặng Văn Đông', 'dặngvandong@example.com', '0900100073', '1 Nguyễn Trãi, Hà Nội', '2024-11-13', '2024-11-13'),
-('CUS74', 'CUS74', 'Hoàng Văn An', 'hoangvanan@example.com', '0900100074', '69 Trần Hưng Đạo, Hà Nội', '2024-11-14', '2024-11-14'),
-('CUS75', 'CUS75', 'Phạm Văn Cường', 'phamvancuờng@example.com', '0900100075', '9 Hai Bà Trưng, Hà Nội', '2024-11-15', '2024-11-15'),
-('CUS76', 'CUS76', 'Trần Văn Nam', 'trầnvannam@example.com', '0900100076', '44 Bà Triệu, Hà Nội', '2024-11-16', '2024-11-16'),
-('CUS77', 'CUS77', 'Võ Văn Bình', 'vovanbinh@example.com', '0900100077', '15 Phan Chu Trinh, Hà Nội', '2024-11-17', '2024-11-17'),
-('CUS78', 'CUS78', 'Hoàng Thị Thu', 'hoangthithu@example.com', '0900100078', '115 Nguyễn Du, Hà Nội', '2024-11-18', '2024-11-18'),
-('CUS79', 'CUS79', 'Phan Văn Tùng', 'phanvantung@example.com', '0900100079', '156 Trần Phú, Hà Nội', '2024-11-19', '2024-11-19'),
-('CUS80', 'CUS80', 'Đỗ Văn An', 'dỗvanan@example.com', '0900100080', '182 Lý Thường Kiệt, Hà Nội', '2024-11-20', '2024-11-20'),
-('CUS81', 'CUS81', 'Nguyễn Thị Thu', 'nguyễnthithu@example.com', '0900100081', '86 Lê Lợi, Hà Nội', '2024-11-21', '2024-11-21'),
-('CUS82', 'CUS82', 'Đỗ Thị Dung', 'dỗthidung@example.com', '0900100082', '37 Nguyễn Trãi, Hà Nội', '2024-11-22', '2024-11-22'),
-('CUS83', 'CUS83', 'Trương Thị Hạnh', 'truongthihanh@example.com', '0900100083', '182 Trần Hưng Đạo, Hà Nội', '2024-11-23', '2024-11-23'),
-('CUS84', 'CUS84', 'Phạm Văn Bình', 'phamvanbinh@example.com', '0900100084', '24 Hai Bà Trưng, Hà Nội', '2024-11-24', '2024-11-24'),
-('CUS85', 'CUS85', 'Phan Thị Bình', 'phanthibinh@example.com', '0900100085', '127 Bà Triệu, Hà Nội', '2024-11-25', '2024-11-25'),
-('CUS86', 'CUS86', 'Võ Thị Lan', 'vothilan@example.com', '0900100086', '41 Phan Chu Trinh, Hà Nội', '2024-11-26', '2024-11-26'),
-('CUS87', 'CUS87', 'Phạm Thị Bình', 'phamthibinh@example.com', '0900100087', '174 Nguyễn Du, Hà Nội', '2024-11-27', '2024-11-27'),
-('CUS88', 'CUS88', 'Đỗ Thị Lan', 'dỗthilan@example.com', '0900100088', '60 Trần Phú, Hà Nội', '2024-11-28', '2024-11-28'),
-('CUS89', 'CUS89', 'Võ Văn Hoàng', 'vovanhoang@example.com', '0900100089', '158 Lý Thường Kiệt, Hà Nội', '2024-11-29', '2024-11-29'),
-('CUS90', 'CUS90', 'Nguyễn Văn Cường', 'nguyễnvancuờng@example.com', '0900100090', '196 Lê Lợi, Hà Nội', '2024-11-30', '2024-11-30'),
-('CUS91', 'CUS91', 'Đỗ Văn Nam', 'dỗvannam@example.com', '0900100091', '176 Nguyễn Trãi, Hà Nội', '2024-11-01', '2024-11-01'),
-('CUS92', 'CUS92', 'Phan Văn Đông', 'phanvandong@example.com', '0900100092', '173 Trần Hưng Đạo, Hà Nội', '2024-11-02', '2024-11-02'),
-('CUS93', 'CUS93', 'Hoàng Văn Đông', 'hoangvandong@example.com', '0900100093', '92 Hai Bà Trưng, Hà Nội', '2024-11-03', '2024-11-03'),
-('CUS94', 'CUS94', 'Phan Văn Hoàng', 'phanvanhoang@example.com', '0900100094', '199 Bà Triệu, Hà Nội', '2024-11-04', '2024-11-04'),
-('CUS95', 'CUS95', 'Lê Thị Lan', 'lethilan@example.com', '0900100095', '155 Phan Chu Trinh, Hà Nội', '2024-11-05', '2024-11-05'),
-('CUS96', 'CUS96', 'Lê Thị Phương', 'lethiphuong@example.com', '0900100096', '90 Nguyễn Du, Hà Nội', '2024-11-06', '2024-11-06'),
-('CUS97', 'CUS97', 'Trương Văn Cường', 'truongvancuờng@example.com', '0900100097', '151 Trần Phú, Hà Nội', '2024-11-07', '2024-11-07'),
-('CUS98', 'CUS98', 'Trương Thị Dung', 'truongthidung@example.com', '0900100098', '43 Lý Thường Kiệt, Hà Nội', '2024-11-08', '2024-11-08'),
-('CUS99', 'CUS99', 'Lê Văn Tùng', 'levantung@example.com', '0900100099', '181 Lê Lợi, Hà Nội', '2024-11-09', '2024-11-09'),
-('CUS100', 'CUS100', 'Nguyễn Văn Hoàng', 'nguyễnvanhoang@example.com', '0900100100', '16 Nguyễn Trãi, Hà Nội', '2024-11-10', '2024-11-10'),
-('CUS101', 'CUS101', 'Đỗ Văn Tùng', 'dỗvantung@example.com', '0900100101', '22 Trần Hưng Đạo, Hà Nội', '2024-11-11', '2025-11-17'),
-('CUS102', 'CUS102', 'Trương Văn Quang', 'truongvanquang@example.com', '0900100102', '187 Hai Bà Trưng, Hà Nội', '2024-11-12', '2025-11-18'),
-('CUS103', 'CUS103', 'Nguyễn Văn Kiên', 'nguyễnvankien@example.com', '0900100103', '43 Bà Triệu, Hà Nội', '2024-11-13', '2025-11-19'),
-('CUS104', 'CUS104', 'Lê Thị Mai', 'lethimai@example.com', '0900100104', '87 Phan Chu Trinh, Hà Nội', '2024-11-14', '2025-11-20'),
-('CUS105', 'CUS105', 'Hoàng Văn Cường', 'hoangvancuờng@example.com', '0900100105', '134 Nguyễn Du, Hà Nội', '2024-11-15', '2025-11-21'),
-('CUS106', 'CUS106', 'Phạm Thị Ngọc', 'phamthingoc@example.com', '0900100106', '141 Trần Phú, Hà Nội', '2024-11-16', '2025-11-22'),
-('CUS107', 'CUS107', 'Trương Thị Dung', 'truongthidung@example.com', '0900100107', '166 Lý Thường Kiệt, Hà Nội', '2024-11-17', '2025-11-23'),
-('CUS108', 'CUS108', 'Phạm Văn Tùng', 'phamvantung@example.com', '0900100108', '151 Lê Lợi, Hà Nội', '2024-11-18', '2025-11-24'),
-('CUS109', 'CUS109', 'Võ Văn Đông', 'vovandong@example.com', '0900100109', '130 Nguyễn Trãi, Hà Nội', '2024-11-19', '2025-11-26'),
-('CUS110', 'CUS110', 'Đặng Văn Kiên', 'dặngvankien@example.com', '0900100110', '171 Trần Hưng Đạo, Hà Nội', '2024-11-20', '2025-11-26'),
-('CUS111', 'CUS111', 'Trương Thị Lan', 'truongthilan@example.com', '0900100111', '186 Hai Bà Trưng, Hà Nội', '2024-11-21', '2025-11-26'),
-('CUS112', 'CUS112', 'Phan Văn Nam', 'phanvannam@example.com', '0900100112', '164 Bà Triệu, Hà Nội', '2024-11-22', '2025-11-26'),
-('CUS113', 'CUS113', 'Nguyễn Văn Nam', 'nguyễnvannam@example.com', '0900100113', '114 Phan Chu Trinh, Hà Nội', '2025-11-26', '2025-11-26'),
-('CUS114', 'CUS114', 'Võ Văn Quang', 'vovanquang@example.com', '0900100114', '73 Nguyễn Du, Hà Nội', '2024-11-24', '2024-11-24'),
-('CUS115', 'CUS115', 'Trần Thị Dung', 'trầnthidung@example.com', '0900100115', '157 Trần Phú, Hà Nội', '2024-11-25', '2024-11-25'),
-('CUS116', 'CUS116', 'Trương Văn Quang', 'truongvanquang@example.com', '0900100116', '186 Lý Thường Kiệt, Hà Nội', '2024-11-26', '2025-11-15'),
-('CUS117', 'CUS117', 'Trần Văn Phúc', 'trầnvanphuc@example.com', '0900100117', '52 Lê Lợi, Hà Nội', '2024-11-27', '2025-11-16'),
-('CUS118', 'CUS118', 'Lê Thị Mai', 'lethimai@example.com', '0900100118', '148 Nguyễn Trãi, Hà Nội', '2024-11-28', '2024-11-28'),
-('CUS119', 'CUS119', 'Phạm Thị Lan', 'phamthilan@example.com', '0900100119', '173 Trần Hưng Đạo, Hà Nội', '2024-11-29', '2024-11-29'),
-('CUS120', 'CUS120', 'Đỗ Văn An', 'dỗvanan@example.com', '0900100120', '197 Hai Bà Trưng, Hà Nội', '2024-11-30', '2024-11-30'),
-('CUS121', 'CUS121', 'Hoàng Thị Phương', 'hoangthiphuong@example.com', '0900100121', '29 Bà Triệu, Hà Nội', '2024-11-01', '2024-11-01'),
-('CUS122', 'CUS122', 'Võ Thị Hạnh', 'vothihanh@example.com', '0900100122', '164 Phan Chu Trinh, Hà Nội', '2024-11-02', '2024-11-02'),
-('CUS123', 'CUS123', 'Lê Văn Huy', 'levanhuy@example.com', '0900100123', '199 Nguyễn Du, Hà Nội', '2024-11-03', '2024-11-03'),
-('CUS124', 'CUS124', 'Phan Văn Huy', 'phanvanhuy@example.com', '0900100124', '183 Trần Phú, Hà Nội', '2024-11-04', '2024-11-04'),
-('CUS125', 'CUS125', 'Võ Thị Lan', 'vothilan@example.com', '0900100125', '70 Lý Thường Kiệt, Hà Nội', '2024-11-05', '2024-11-05'),
-('CUS126', 'CUS126', 'Đặng Thị Hạnh', 'dặngthihanh@example.com', '0900100126', '156 Lê Lợi, Hà Nội', '2024-11-06', '2024-11-06'),
-('CUS127', 'CUS127', 'Võ Thị Thu', 'vothithu@example.com', '0900100127', '30 Nguyễn Trãi, Hà Nội', '2024-11-07', '2024-11-07'),
-('CUS128', 'CUS128', 'Nguyễn Thị Ngọc', 'nguyễnthingoc@example.com', '0900100128', '116 Trần Hưng Đạo, Hà Nội', '2024-11-08', '2024-11-08'),
-('CUS129', 'CUS129', 'Phan Thị Thu', 'phanthithu@example.com', '0900100129', '153 Hai Bà Trưng, Hà Nội', '2024-11-09', '2024-11-09'),
-('CUS130', 'CUS130', 'Hoàng Thị Hạnh', 'hoangthihanh@example.com', '0900100130', '120 Bà Triệu, Hà Nội', '2024-11-10', '2024-11-10'),
-('CUS131', 'CUS131', 'Phạm Văn Kiên', 'phamvankien@example.com', '0900100131', '80 Phan Chu Trinh, Hà Nội', '2024-11-11', '2024-11-11'),
-('CUS132', 'CUS132', 'Võ Văn Kiên', 'vovankien@example.com', '0900100132', '141 Nguyễn Du, Hà Nội', '2024-11-12', '2024-11-12'),
-('CUS133', 'CUS133', 'Phan Thị Dung', 'phanthidung@example.com', '0900100133', '148 Trần Phú, Hà Nội', '2024-11-13', '2024-11-13'),
-('CUS134', 'CUS134', 'Đặng Thị Hạnh', 'dặngthihanh@example.com', '0900100134', '95 Lý Thường Kiệt, Hà Nội', '2024-11-14', '2024-11-14'),
-('CUS135', 'CUS135', 'Lê Thị Mai', 'lethimai@example.com', '0900100135', '44 Lê Lợi, Hà Nội', '2024-11-15', '2024-11-15'),
-('CUS136', 'CUS136', 'Lê Văn Cường', 'levancuờng@example.com', '0900100136', '102 Nguyễn Trãi, Hà Nội', '2024-11-16', '2024-11-16'),
-('CUS137', 'CUS137', 'Nguyễn Thị Thu', 'nguyễnthithu@example.com', '0900100137', '154 Trần Hưng Đạo, Hà Nội', '2024-11-17', '2024-11-17'),
-('CUS138', 'CUS138', 'Nguyễn Thị Mai', 'nguyễnthimai@example.com', '0900100138', '103 Hai Bà Trưng, Hà Nội', '2024-11-18', '2024-11-18'),
-('CUS139', 'CUS139', 'Trương Văn Phúc', 'truongvanphuc@example.com', '0900100139', '19 Bà Triệu, Hà Nội', '2024-11-19', '2024-11-19'),
-('CUS140', 'CUS140', 'Nguyễn Thị Hạnh', 'nguyễnthihanh@example.com', '0900100140', '166 Phan Chu Trinh, Hà Nội', '2024-11-20', '2024-11-20'),
-('CUS141', 'CUS141', 'Trần Thị Hạnh', 'trầnthihanh@example.com', '0900100141', '167 Nguyễn Du, Hà Nội', '2024-11-21', '2024-11-21'),
-('CUS142', 'CUS142', 'Đỗ Thị Lan', 'dỗthilan@example.com', '0900100142', '111 Trần Phú, Hà Nội', '2024-11-22', '2024-11-22'),
-('CUS143', 'CUS143', 'Đỗ Văn Cường', 'dỗvancuờng@example.com', '0900100143', '6 Lý Thường Kiệt, Hà Nội', '2024-11-23', '2024-11-23'),
-('CUS144', 'CUS144', 'Trương Văn Quang', 'truongvanquang@example.com', '0900100144', '135 Lê Lợi, Hà Nội', '2024-11-24', '2024-11-24'),
-('CUS145', 'CUS145', 'Nguyễn Văn Hoàng', 'nguyễnvanhoang@example.com', '0900100145', '77 Nguyễn Trãi, Hà Nội', '2024-11-25', '2024-11-25'),
-('CUS146', 'CUS146', 'Đặng Thị Hạnh', 'dặngthihanh@example.com', '0900100146', '133 Trần Hưng Đạo, Hà Nội', '2024-11-26', '2024-11-26'),
-('CUS147', 'CUS147', 'Võ Văn Tùng', 'vovantung@example.com', '0900100147', '111 Hai Bà Trưng, Hà Nội', '2024-11-27', '2024-11-27'),
-('CUS148', 'CUS148', 'Hoàng Thị Bình', 'hoangthibinh@example.com', '0900100148', '133 Bà Triệu, Hà Nội', '2024-11-28', '2024-11-28'),
-('CUS149', 'CUS149', 'Phan Thị Lan', 'phanthilan@example.com', '0900100149', '179 Phan Chu Trinh, Hà Nội', '2024-11-29', '2024-11-29'),
-('CUS150', 'CUS150', 'Lê Văn Nam', 'levannam@example.com', '0900100150', '145 Nguyễn Du, Hà Nội', '2024-11-30', '2024-11-30'),
-('CUS151', 'CUS151', 'Lê Thị Dung', 'lethidung@example.com', '0900100151', '130 Trần Phú, Hà Nội', '2024-11-01', '2024-11-01'),
-('CUS152', 'CUS152', 'Hoàng Thị Mai', 'hoangthimai@example.com', '0900100152', '63 Lý Thường Kiệt, Hà Nội', '2024-11-02', '2024-11-02'),
-('CUS153', 'CUS153', 'Lê Văn Huy', 'levanhuy@example.com', '0900100153', '35 Lê Lợi, Hà Nội', '2024-11-03', '2024-11-03'),
-('CUS154', 'CUS154', 'Nguyễn Văn Bình', 'nguyễnvanbinh@example.com', '0900100154', '195 Nguyễn Trãi, Hà Nội', '2024-11-04', '2024-11-04'),
-('CUS155', 'CUS155', 'Phan Thị Lan', 'phanthilan@example.com', '0900100155', '137 Trần Hưng Đạo, Hà Nội', '2024-11-05', '2024-11-05'),
-('CUS156', 'CUS156', 'Đỗ Văn Đông', 'dỗvandong@example.com', '0900100156', '93 Hai Bà Trưng, Hà Nội', '2024-11-06', '2024-11-06'),
-('CUS157', 'CUS157', 'Lê Thị Dung', 'lethidung@example.com', '0900100157', '102 Bà Triệu, Hà Nội', '2024-11-07', '2024-11-07'),
-('CUS158', 'CUS158', 'Hoàng Thị Mai', 'hoangthimai@example.com', '0900100158', '101 Phan Chu Trinh, Hà Nội', '2024-11-08', '2024-11-08'),
-('CUS159', 'CUS159', 'Trương Thị Thu', 'truongthithu@example.com', '0900100159', '41 Nguyễn Du, Hà Nội', '2024-11-09', '2024-11-09'),
-('CUS160', 'CUS160', 'Đỗ Thị Bình', 'dỗthibinh@example.com', '0900100160', '24 Trần Phú, Hà Nội', '2024-11-10', '2024-11-10'),
-('CUS161', 'CUS161', 'Đỗ Văn Quang', 'dỗvanquang@example.com', '0900100161', '48 Lý Thường Kiệt, Hà Nội', '2024-11-11', '2024-11-11'),
-('CUS162', 'CUS162', 'Nguyễn Văn Bình', 'nguyễnvanbinh@example.com', '0900100162', '43 Lê Lợi, Hà Nội', '2024-11-12', '2024-11-12'),
-('CUS163', 'CUS163', 'Phạm Văn Phúc', 'phamvanphuc@example.com', '0900100163', '200 Nguyễn Trãi, Hà Nội', '2024-11-13', '2024-11-13'),
-('CUS164', 'CUS164', 'Phạm Văn Tùng', 'phamvantung@example.com', '0900100164', '133 Trần Hưng Đạo, Hà Nội', '2024-11-14', '2024-11-14'),
-('CUS165', 'CUS165', 'Phan Văn Bình', 'phanvanbinh@example.com', '0900100165', '28 Hai Bà Trưng, Hà Nội', '2024-11-15', '2024-11-15'),
-('CUS166', 'CUS166', 'Đỗ Văn An', 'dỗvanan@example.com', '0900100166', '170 Bà Triệu, Hà Nội', '2024-11-16', '2024-11-16'),
-('CUS167', 'CUS167', 'Trần Thị Dung', 'trầnthidung@example.com', '0900100167', '115 Phan Chu Trinh, Hà Nội', '2024-11-17', '2024-11-17'),
-('CUS168', 'CUS168', 'Trương Thị Bình', 'truongthibinh@example.com', '0900100168', '105 Nguyễn Du, Hà Nội', '2024-11-18', '2024-11-18'),
-('CUS169', 'CUS169', 'Phan Thị Mai', 'phanthimai@example.com', '0900100169', '93 Trần Phú, Hà Nội', '2024-11-19', '2024-11-19'),
-('CUS170', 'CUS170', 'Hoàng Văn Bình', 'hoangvanbinh@example.com', '0900100170', '161 Lý Thường Kiệt, Hà Nội', '2024-11-20', '2024-11-20'),
-('CUS171', 'CUS171', 'Trần Thị Mai', 'trầnthimai@example.com', '0900100171', '129 Lê Lợi, Hà Nội', '2024-11-21', '2024-11-21'),
-('CUS172', 'CUS172', 'Nguyễn Văn Quang', 'nguyễnvanquang@example.com', '0900100172', '46 Nguyễn Trãi, Hà Nội', '2024-11-22', '2024-11-22'),
-('CUS173', 'CUS173', 'Trần Thị Ngọc', 'trầnthingoc@example.com', '0900100173', '17 Trần Hưng Đạo, Hà Nội', '2024-11-23', '2024-11-23'),
-('CUS174', 'CUS174', 'Đặng Thị Lan', 'dặngthilan@example.com', '0900100174', '30 Hai Bà Trưng, Hà Nội', '2024-11-24', '2024-11-24'),
-('CUS175', 'CUS175', 'Phạm Văn Hoàng', 'phamvanhoang@example.com', '0900100175', '26 Bà Triệu, Hà Nội', '2024-11-25', '2024-11-25'),
-('CUS176', 'CUS176', 'Phạm Thị Hạnh', 'phamthihanh@example.com', '0900100176', '30 Phan Chu Trinh, Hà Nội', '2024-11-26', '2024-11-26'),
-('CUS177', 'CUS177', 'Hoàng Thị Phương', 'hoangthiphuong@example.com', '0900100177', '56 Nguyễn Du, Hà Nội', '2024-11-27', '2024-11-27'),
-('CUS178', 'CUS178', 'Phạm Văn Bình', 'phamvanbinh@example.com', '0900100178', '189 Trần Phú, Hà Nội', '2024-11-28', '2024-11-28'),
-('CUS179', 'CUS179', 'Võ Thị Bình', 'vothibinh@example.com', '0900100179', '175 Lý Thường Kiệt, Hà Nội', '2024-11-29', '2024-11-29'),
-('CUS180', 'CUS180', 'Võ Văn Huy', 'vovanhuy@example.com', '0900100180', '166 Lê Lợi, Hà Nội', '2024-11-30', '2024-11-30'),
-('CUS181', 'CUS181', 'Võ Văn Bình', 'vovanbinh@example.com', '0900100181', '124 Nguyễn Trãi, Hà Nội', '2024-11-01', '2024-11-01'),
-('CUS182', 'CUS182', 'Nguyễn Thị Hạnh', 'nguyễnthihanh@example.com', '0900100182', '97 Trần Hưng Đạo, Hà Nội', '2024-11-02', '2024-11-02'),
-('CUS183', 'CUS183', 'Trương Thị Lan', 'truongthilan@example.com', '0900100183', '17 Hai Bà Trưng, Hà Nội', '2024-11-03', '2024-11-03'),
-('CUS184', 'CUS184', 'Phan Thị Lan', 'phanthilan@example.com', '0900100184', '2 Bà Triệu, Hà Nội', '2024-11-04', '2024-11-04'),
-('CUS185', 'CUS185', 'Võ Văn Huy', 'vovanhuy@example.com', '0900100185', '129 Phan Chu Trinh, Hà Nội', '2024-11-05', '2024-11-05'),
-('CUS186', 'CUS186', 'Phạm Văn Huy', 'phamvanhuy@example.com', '0900100186', '159 Nguyễn Du, Hà Nội', '2024-11-06', '2024-11-06'),
-('CUS187', 'CUS187', 'Hoàng Văn Huy', 'hoangvanhuy@example.com', '0900100187', '146 Trần Phú, Hà Nội', '2024-11-07', '2024-11-07'),
-('CUS188', 'CUS188', 'Trần Văn Huy', 'trầnvanhuy@example.com', '0900100188', '170 Lý Thường Kiệt, Hà Nội', '2024-11-08', '2024-11-08'),
-('CUS189', 'CUS189', 'Lê Thị Mai', 'lethimai@example.com', '0900100189', '69 Lê Lợi, Hà Nội', '2024-11-09', '2024-11-09'),
-('CUS190', 'CUS190', 'Hoàng Văn Quang', 'hoangvanquang@example.com', '0900100190', '29 Nguyễn Trãi, Hà Nội', '2024-11-10', '2024-11-10'),
-('CUS191', 'CUS191', 'Võ Văn Huy', 'vovanhuy@example.com', '0900100191', '54 Trần Hưng Đạo, Hà Nội', '2024-11-11', '2024-11-11'),
-('CUS192', 'CUS192', 'Phan Thị Lan', 'phanthilan@example.com', '0900100192', '22 Hai Bà Trưng, Hà Nội', '2024-11-12', '2024-11-12'),
-('CUS193', 'CUS193', 'Lê Thị Lan', 'lethilan@example.com', '0900100193', '154 Bà Triệu, Hà Nội', '2024-11-13', '2024-11-13'),
-('CUS194', 'CUS194', 'Hoàng Văn Quang', 'hoangvanquang@example.com', '0900100194', '108 Phan Chu Trinh, Hà Nội', '2024-11-14', '2024-11-14'),
-('CUS195', 'CUS195', 'Phạm Văn Phúc', 'phamvanphuc@example.com', '0900100195', '89 Nguyễn Du, Hà Nội', '2024-11-15', '2024-11-15'),
-('CUS196', 'CUS196', 'Trần Thị Mai', 'trầnthimai@example.com', '0900100196', '144 Trần Phú, Hà Nội', '2024-11-16', '2024-11-16'),
-('CUS197', 'CUS197', 'Trần Thị Dung', 'trầnthidung@example.com', '0900100197', '37 Lý Thường Kiệt, Hà Nội', '2024-11-17', '2024-11-17'),
-('CUS198', 'CUS198', 'Phạm Văn Bình', 'phamvanbinh@example.com', '0900100198', '198 Lê Lợi, Hà Nội', '2024-11-18', '2024-11-18'),
-('CUS199', 'CUS199', 'Nguyễn Thị Bình', 'nguyễnthibinh@example.com', '0900100199', '59 Nguyễn Trãi, Hà Nội', '2024-11-19', '2024-11-19'),
-('CUS200', 'CUS200', 'Lê Thị Hạnh', 'lethihanh@example.com', '0900100200', '73 Trần Hưng Đạo, Hà Nội', '2024-11-20', '2024-11-20');
+('CUS1', 'US1', 'Đặng Thị Ngọc', 'dặngthingoc@example.com', '0900000001', '87 Nguyễn Trãi, Hà Nội', '2024-11-01', '2024-11-01'),
+('CUS2', 'US2', 'Phạm Văn Quang', 'phamvanquang@example.com', '0900000002', '88 Trần Hưng Đạo, Hà Nội', '2024-11-02', '2024-11-02'),
+('CUS3', 'US3', 'Đỗ Thị Thu', 'dỗthithu@example.com', '0900000003', '27 Hai Bà Trưng, Hà Nội', '2024-11-03', '2024-11-03'),
+('CUS4', 'US4', 'Đỗ Văn Đông', 'dỗvandong@example.com', '0900000004', '187 Bà Triệu, Hà Nội', '2024-11-04', '2024-11-04'),
+('CUS5', 'US5', 'Võ Văn Tùng', 'vovantung@example.com', '0900000005', '179 Phan Chu Trinh, Hà Nội', '2024-11-05', '2024-11-05'),
+('CUS6', 'US6', 'Đỗ Văn Kiên', 'dỗvankien@example.com', '0900000006', '125 Nguyễn Du, Hà Nội', '2024-11-06', '2024-11-06'),
+('CUS7', 'US7', 'Hoàng Văn Đông', 'hoangvandong@example.com', '0900000007', '168 Trần Phú, Hà Nội', '2024-11-07', '2024-11-07'),
+('CUS8', 'US8', 'Trương Văn Huy', 'truongvanhuy@example.com', '0900000008', '13 Lý Thường Kiệt, Hà Nội', '2024-11-08', '2024-11-08'),
+('CUS9', 'US9', 'Lê Văn Cường', 'levancuờng@example.com', '0900000009', '13 Lê Lợi, Hà Nội', '2024-11-09', '2024-11-09'),
+('CUS10', 'US10', 'Đặng Văn An', 'dặngvanan@example.com', '0900000010', '144 Nguyễn Trãi, Hà Nội', '2024-11-10', '2024-11-10'),
+('CUS11', 'US11', 'Trần Thị Lan', 'trầnthilan@example.com', '0900000011', '128 Trần Hưng Đạo, Hà Nội', '2024-11-11', '2024-11-11'),
+('CUS12', 'US12', 'Đặng Văn Cường', 'dặngvancuờng@example.com', '0900000012', '96 Hai Bà Trưng, Hà Nội', '2024-11-12', '2024-11-12'),
+('CUS13', 'US13', 'Đặng Thị Bình', 'dặngthibinh@example.com', '0900000013', '131 Bà Triệu, Hà Nội', '2024-11-13', '2024-11-13'),
+('CUS14', 'US14', 'Phạm Văn Hoàng', 'phamvanhoang@example.com', '0900000014', '120 Phan Chu Trinh, Hà Nội', '2024-11-14', '2024-11-14'),
+('CUS15', 'US15', 'Đỗ Văn Huy', 'dỗvanhuy@example.com', '0900000015', '182 Nguyễn Du, Hà Nội', '2024-11-15', '2024-11-15'),
+('CUS16', 'US16', 'Hoàng Văn An', 'hoangvanan@example.com', '0900000016', '92 Trần Phú, Hà Nội', '2024-11-16', '2024-11-16'),
+('CUS17', 'US17', 'Nguyễn Văn Nam', 'nguyễnvannam@example.com', '0900000017', '145 Lý Thường Kiệt, Hà Nội', '2024-11-17', '2024-11-17'),
+('CUS18', 'US18', 'Trần Thị Hạnh', 'trầnthihanh@example.com', '0900000018', '83 Lê Lợi, Hà Nội', '2024-11-18', '2024-11-18'),
+('CUS19', 'US19', 'Lê Văn Tùng', 'levantung@example.com', '0900000019', '95 Nguyễn Trãi, Hà Nội', '2024-11-19', '2024-11-19'),
+('CUS20', 'US20', 'Đỗ Văn Quang', 'dỗvanquang@example.com', '0900000020', '133 Trần Hưng Đạo, Hà Nội', '2024-11-20', '2024-11-20'),
+('CUS21', 'US21', 'Đặng Thị Phương', 'dặngthiphuong@example.com', '0900000021', '62 Hai Bà Trưng, Hà Nội', '2024-11-21', '2024-11-21'),
+('CUS22', 'US22', 'Phạm Thị Phương', 'phamthiphuong@example.com', '0900000022', '10 Bà Triệu, Hà Nội', '2024-11-22', '2024-11-22'),
+('CUS23', 'US23', 'Lê Văn Kiên', 'levankien@example.com', '0900000023', '158 Phan Chu Trinh, Hà Nội', '2024-11-23', '2024-11-23'),
+('CUS24', 'US24', 'Lê Văn Phúc', 'levanphuc@example.com', '0900000024', '3 Nguyễn Du, Hà Nội', '2024-11-24', '2024-11-24'),
+('CUS25', 'US25', 'Nguyễn Thị Ngọc', 'nguyễnthingoc@example.com', '0900000025', '134 Trần Phú, Hà Nội', '2024-11-25', '2024-11-25'),
+('CUS26', 'US26', 'Phan Thị Dung', 'phanthidung@example.com', '0900000026', '120 Lý Thường Kiệt, Hà Nội', '2024-11-26', '2024-11-26'),
+('CUS27', 'US27', 'Trương Văn Quang', 'truongvanquang@example.com', '0900000027', '70 Lê Lợi, Hà Nội', '2024-11-27', '2024-11-27'),
+('CUS28', 'US28', 'Lê Thị Lan', 'lethilan@example.com', '0900000028', '20 Nguyễn Trãi, Hà Nội', '2024-11-28', '2024-11-28'),
+('CUS29', 'US29', 'Phạm Văn Kiên', 'phamvankien@example.com', '0900000029', '189 Trần Hưng Đạo, Hà Nội', '2024-11-29', '2024-11-29'),
+('CUS30', 'US30', 'Nguyễn Thị Mai', 'nguyễnthimai@example.com', '0900000030', '184 Hai Bà Trưng, Hà Nội', '2024-11-30', '2024-11-30'),
+('CUS31', 'US31', 'Trương Thị Phương', 'truongthiphuong@example.com', '0900000031', '169 Bà Triệu, Hà Nội', '2024-11-01', '2024-11-01'),
+('CUS32', 'US32', 'Hoàng Thị Lan', 'hoangthilan@example.com', '0900000032', '89 Phan Chu Trinh, Hà Nội', '2024-11-02', '2024-11-02'),
+('CUS33', 'US33', 'Phạm Thị Hạnh', 'phamthihanh@example.com', '0900000033', '124 Nguyễn Du, Hà Nội', '2024-11-03', '2024-11-03'),
+('CUS34', 'US34', 'Võ Văn Phúc', 'vovanphuc@example.com', '0900000034', '163 Trần Phú, Hà Nội', '2024-11-04', '2024-11-04'),
+('CUS35', 'US35', 'Võ Thị Lan', 'vothilan@example.com', '0900000035', '72 Lý Thường Kiệt, Hà Nội', '2024-11-05', '2024-11-05'),
+('CUS36', 'US36', 'Hoàng Văn Hoàng', 'hoangvanhoang@example.com', '0900000036', '97 Lê Lợi, Hà Nội', '2024-11-06', '2024-11-06'),
+('CUS37', 'US37', 'Hoàng Văn Phúc', 'hoangvanphuc@example.com', '0900000037', '9 Nguyễn Trãi, Hà Nội', '2024-11-07', '2024-11-07'),
+('CUS38', 'US38', 'Hoàng Văn Cường', 'hoangvancuờng@example.com', '0900000038', '137 Trần Hưng Đạo, Hà Nội', '2024-11-08', '2024-11-08'),
+('CUS39', 'US39', 'Nguyễn Văn Cường', 'nguyễnvancuờng@example.com', '0900000039', '2 Hai Bà Trưng, Hà Nội', '2024-11-09', '2024-11-09'),
+('CUS40', 'US40', 'Phạm Văn Kiên', 'phamvankien@example.com', '0900000040', '83 Bà Triệu, Hà Nội', '2024-11-10', '2024-11-10'),
+('CUS41', 'US41', 'Võ Thị Ngọc', 'vothingoc@example.com', '0900000041', '145 Phan Chu Trinh, Hà Nội', '2024-11-11', '2024-11-11'),
+('CUS42', 'US42', 'Đỗ Thị Hạnh', 'dỗthihanh@example.com', '0900000042', '127 Nguyễn Du, Hà Nội', '2024-11-12', '2024-11-12'),
+('CUS43', 'US43', 'Lê Thị Phương', 'lethiphuong@example.com', '0900000043', '129 Trần Phú, Hà Nội', '2024-11-13', '2024-11-13'),
+('CUS44', 'US44', 'Hoàng Văn Nam', 'hoangvannam@example.com', '0900000044', '135 Lý Thường Kiệt, Hà Nội', '2024-11-14', '2024-11-14'),
+('CUS45', 'US45', 'Đặng Thị Ngọc', 'dặngthingoc@example.com', '0900000045', '136 Lê Lợi, Hà Nội', '2024-11-15', '2024-11-15'),
+('CUS46', 'US46', 'Lê Văn Tùng', 'levantung@example.com', '0900000046', '140 Nguyễn Trãi, Hà Nội', '2024-11-16', '2024-11-16'),
+('CUS47', 'US47', 'Lê Thị Hạnh', 'lethihanh@example.com', '0900000047', '112 Trần Hưng Đạo, Hà Nội', '2024-11-17', '2024-11-17'),
+('CUS48', 'US48', 'Võ Thị Lan', 'vothilan@example.com', '0900000048', '116 Hai Bà Trưng, Hà Nội', '2024-11-18', '2024-11-18'),
+('CUS49', 'US49', 'Hoàng Thị Thu', 'hoangthithu@example.com', '0900000049', '189 Bà Triệu, Hà Nội', '2024-11-19', '2024-11-19'),
+('CUS50', 'US50', 'Nguyễn Thị Ngọc', 'nguyễnthingoc@example.com', '0900000050', '71 Phan Chu Trinh, Hà Nội', '2024-11-20', '2024-11-20'),
+('CUS51', 'US51', 'Võ Văn Kiên', 'vovankien@example.com', '0900000051', '178 Nguyễn Du, Hà Nội', '2024-11-21', '2024-11-21'),
+('CUS52', 'US52', 'Trương Văn Phúc', 'truongvanphuc@example.com', '0900000052', '57 Trần Phú, Hà Nội', '2024-11-22', '2024-11-22'),
+('CUS53', 'US53', 'Nguyễn Văn Cường', 'nguyễnvancuờng@example.com', '0900000053', '64 Lý Thường Kiệt, Hà Nội', '2024-11-23', '2024-11-23'),
+('CUS54', 'US54', 'Phạm Thị Lan', 'phamthilan@example.com', '0900000054', '23 Lê Lợi, Hà Nội', '2024-11-24', '2024-11-24'),
+('CUS55', 'US55', 'Trương Thị Hạnh', 'truongthihanh@example.com', '0900000055', '191 Nguyễn Trãi, Hà Nội', '2024-11-25', '2024-11-25'),
+('CUS56', 'US56', 'Phan Thị Ngọc', 'phanthingoc@example.com', '0900000056', '118 Trần Hưng Đạo, Hà Nội', '2024-11-26', '2024-11-26'),
+('CUS57', 'US57', 'Hoàng Thị Mai', 'hoangthimai@example.com', '0900000057', '164 Hai Bà Trưng, Hà Nội', '2024-11-27', '2024-11-27'),
+('CUS58', 'US58', 'Hoàng Văn Kiên', 'hoangvankien@example.com', '0900000058', '166 Bà Triệu, Hà Nội', '2024-11-28', '2024-11-28'),
+('CUS59', 'US59', 'Phan Văn Quang', 'phanvanquang@example.com', '0900000059', '179 Phan Chu Trinh, Hà Nội', '2024-11-29', '2024-11-29'),
+('CUS60', 'US60', 'Nguyễn Văn Kiên', 'nguyễnvankien@example.com', '0900000060', '122 Nguyễn Du, Hà Nội', '2024-11-30', '2024-11-30'),
+('CUS61', 'US61', 'Hoàng Thị Lan', 'hoangthilan@example.com', '0900000061', '46 Trần Phú, Hà Nội', '2024-11-01', '2024-11-01'),
+('CUS62', 'US62', 'Trương Văn Đông', 'truongvandong@example.com', '0900000062', '181 Lý Thường Kiệt, Hà Nội', '2024-11-02', '2024-11-02'),
+('CUS63', 'US63', 'Lê Thị Lan', 'lethilan@example.com', '0900000063', '164 Lê Lợi, Hà Nội', '2024-11-03', '2024-11-03'),
+('CUS64', 'US64', 'Trần Thị Bình', 'trầnthibinh@example.com', '0900000064', '48 Nguyễn Trãi, Hà Nội', '2024-11-04', '2024-11-04'),
+('CUS65', 'US65', 'Đặng Thị Lan', 'dặngthilan@example.com', '0900000065', '39 Trần Hưng Đạo, Hà Nội', '2024-11-05', '2024-11-05'),
+('CUS66', 'US66', 'Hoàng Văn Tùng', 'hoangvantung@example.com', '0900000066', '13 Hai Bà Trưng, Hà Nội', '2024-11-06', '2024-11-06'),
+('CUS67', 'US67', 'Đỗ Văn An', 'dỗvanan@example.com', '0900000067', '31 Bà Triệu, Hà Nội', '2024-11-07', '2024-11-07'),
+('CUS68', 'US68', 'Phan Thị Phương', 'phanthiphuong@example.com', '0900000068', '87 Phan Chu Trinh, Hà Nội', '2024-11-08', '2024-11-08'),
+('CUS69', 'US69', 'Nguyễn Văn Quang', 'nguyễnvanquang@example.com', '0900000069', '85 Nguyễn Du, Hà Nội', '2024-11-09', '2024-11-09'),
+('CUS70', 'US70', 'Hoàng Thị Phương', 'hoangthiphuong@example.com', '0900000070', '11 Trần Phú, Hà Nội', '2024-11-10', '2024-11-10'),
+('CUS71', 'US71', 'Phan Thị Mai', 'phanthimai@example.com', '0900000071', '117 Lý Thường Kiệt, Hà Nội', '2024-11-11', '2024-11-11'),
+('CUS72', 'US72', 'Võ Thị Dung', 'vothidung@example.com', '0900000072', '30 Lê Lợi, Hà Nội', '2024-11-12', '2024-11-12'),
+('CUS73', 'US73', 'Đặng Văn Đông', 'dặngvandong@example.com', '0900000073', '1 Nguyễn Trãi, Hà Nội', '2024-11-13', '2024-11-13'),
+('CUS74', 'US74', 'Hoàng Văn An', 'hoangvanan@example.com', '0900000074', '69 Trần Hưng Đạo, Hà Nội', '2024-11-14', '2024-11-14'),
+('CUS75', 'US75', 'Phạm Văn Cường', 'phamvancuờng@example.com', '0900000075', '9 Hai Bà Trưng, Hà Nội', '2024-11-15', '2024-11-15'),
+('CUS76', 'US76', 'Trần Văn Nam', 'trầnvannam@example.com', '0900000076', '44 Bà Triệu, Hà Nội', '2024-11-16', '2024-11-16'),
+('CUS77', 'US77', 'Võ Văn Bình', 'vovanbinh@example.com', '0900000077', '15 Phan Chu Trinh, Hà Nội', '2024-11-17', '2024-11-17'),
+('CUS78', 'US78', 'Hoàng Thị Thu', 'hoangthithu@example.com', '0900000078', '115 Nguyễn Du, Hà Nội', '2024-11-18', '2024-11-18'),
+('CUS79', 'US79', 'Phan Văn Tùng', 'phanvantung@example.com', '0900000079', '156 Trần Phú, Hà Nội', '2024-11-19', '2024-11-19'),
+('CUS80', 'US80', 'Đỗ Văn An', 'dỗvanan@example.com', '0900000080', '182 Lý Thường Kiệt, Hà Nội', '2024-11-20', '2024-11-20'),
+('CUS81', 'US81', 'Nguyễn Thị Thu', 'nguyễnthithu@example.com', '0900000081', '86 Lê Lợi, Hà Nội', '2024-11-21', '2024-11-21'),
+('CUS82', 'US82', 'Đỗ Thị Dung', 'dỗthidung@example.com', '0900000082', '37 Nguyễn Trãi, Hà Nội', '2024-11-22', '2024-11-22'),
+('CUS83', 'US83', 'Trương Thị Hạnh', 'truongthihanh@example.com', '0900000083', '182 Trần Hưng Đạo, Hà Nội', '2024-11-23', '2024-11-23'),
+('CUS84', 'US84', 'Phạm Văn Bình', 'phamvanbinh@example.com', '0900000084', '24 Hai Bà Trưng, Hà Nội', '2024-11-24', '2024-11-24'),
+('CUS85', 'US85', 'Phan Thị Bình', 'phanthibinh@example.com', '0900000085', '127 Bà Triệu, Hà Nội', '2024-11-25', '2024-11-25'),
+('CUS86', 'US86', 'Võ Thị Lan', 'vothilan@example.com', '0900000086', '41 Phan Chu Trinh, Hà Nội', '2024-11-26', '2024-11-26'),
+('CUS87', 'US87', 'Phạm Thị Bình', 'phamthibinh@example.com', '0900000087', '174 Nguyễn Du, Hà Nội', '2024-11-27', '2024-11-27'),
+('CUS88', 'US88', 'Đỗ Thị Lan', 'dỗthilan@example.com', '0900000088', '60 Trần Phú, Hà Nội', '2024-11-28', '2024-11-28'),
+('CUS89', 'US89', 'Võ Văn Hoàng', 'vovanhoang@example.com', '0900000089', '158 Lý Thường Kiệt, Hà Nội', '2024-11-29', '2024-11-29'),
+('CUS90', 'US90', 'Nguyễn Văn Cường', 'nguyễnvancuờng@example.com', '0900000090', '196 Lê Lợi, Hà Nội', '2024-11-30', '2024-11-30'),
+('CUS91', 'US91', 'Đỗ Văn Nam', 'dỗvannam@example.com', '0900000091', '176 Nguyễn Trãi, Hà Nội', '2024-11-01', '2024-11-01'),
+('CUS92', 'US92', 'Phan Văn Đông', 'phanvandong@example.com', '0900000092', '173 Trần Hưng Đạo, Hà Nội', '2024-11-02', '2024-11-02'),
+('CUS93', 'US93', 'Hoàng Văn Đông', 'hoangvandong@example.com', '0900000093', '92 Hai Bà Trưng, Hà Nội', '2024-11-03', '2024-11-03'),
+('CUS94', 'US94', 'Phan Văn Hoàng', 'phanvanhoang@example.com', '0900000094', '199 Bà Triệu, Hà Nội', '2024-11-04', '2024-11-04'),
+('CUS95', 'US95', 'Lê Thị Lan', 'lethilan@example.com', '0900000095', '155 Phan Chu Trinh, Hà Nội', '2024-11-05', '2024-11-05'),
+('CUS96', 'US96', 'Lê Thị Phương', 'lethiphuong@example.com', '0900000096', '90 Nguyễn Du, Hà Nội', '2024-11-06', '2024-11-06'),
+('CUS97', 'US97', 'Trương Văn Cường', 'truongvancuờng@example.com', '0900000097', '151 Trần Phú, Hà Nội', '2024-11-07', '2024-11-07'),
+('CUS98', 'US98', 'Trương Thị Dung', 'truongthidung@example.com', '0900000098', '43 Lý Thường Kiệt, Hà Nội', '2024-11-08', '2024-11-08'),
+('CUS99', 'US99', 'Lê Văn Tùng', 'levantung@example.com', '0900000099', '181 Lê Lợi, Hà Nội', '2024-11-09', '2024-11-09'),
+('CUS100', 'US100', 'Nguyễn Văn Hoàng', 'nguyễnvanhoang@example.com', '0900000100', '16 Nguyễn Trãi, Hà Nội', '2024-11-10', '2024-11-10'),
+('CUS101', 'US101', 'Đỗ Văn Tùng', 'dỗvantung@example.com', '0900000101', '22 Trần Hưng Đạo, Hà Nội', '2024-11-11', '2025-11-17'),
+('CUS102', 'US102', 'Trương Văn Quang', 'truongvanquang@example.com', '0900000102', '187 Hai Bà Trưng, Hà Nội', '2024-11-12', '2025-11-18'),
+('CUS103', 'US103', 'Nguyễn Văn Kiên', 'nguyễnvankien@example.com', '0900000103', '43 Bà Triệu, Hà Nội', '2024-11-13', '2025-11-19'),
+('CUS104', 'US104', 'Lê Thị Mai', 'lethimai@example.com', '0900000104', '87 Phan Chu Trinh, Hà Nội', '2024-11-14', '2025-11-20'),
+('CUS105', 'US105', 'Hoàng Văn Cường', 'hoangvancuờng@example.com', '0900000105', '134 Nguyễn Du, Hà Nội', '2024-11-15', '2025-11-21'),
+('CUS106', 'US106', 'Phạm Thị Ngọc', 'phamthingoc@example.com', '0900000106', '141 Trần Phú, Hà Nội', '2024-11-16', '2025-11-22'),
+('CUS107', 'US107', 'Trương Thị Dung', 'truongthidung@example.com', '0900000107', '166 Lý Thường Kiệt, Hà Nội', '2024-11-17', '2025-11-23'),
+('CUS108', 'US108', 'Phạm Văn Tùng', 'phamvantung@example.com', '0900000108', '151 Lê Lợi, Hà Nội', '2024-11-18', '2025-11-24'),
+('CUS109', 'US109', 'Võ Văn Đông', 'vovandong@example.com', '0900000109', '130 Nguyễn Trãi, Hà Nội', '2024-11-19', '2025-11-26'),
+('CUS110', 'US110', 'Đặng Văn Kiên', 'dặngvankien@example.com', '0900000110', '171 Trần Hưng Đạo, Hà Nội', '2024-11-20', '2025-11-26'),
+('CUS111', 'US111', 'Trương Thị Lan', 'truongthilan@example.com', '0900000111', '186 Hai Bà Trưng, Hà Nội', '2024-11-21', '2025-11-26'),
+('CUS112', 'US112', 'Phan Văn Nam', 'phanvannam@example.com', '0900000112', '164 Bà Triệu, Hà Nội', '2024-11-22', '2025-11-26'),
+('CUS113', 'US113', 'Nguyễn Văn Nam', 'nguyễnvannam@example.com', '0900000113', '114 Phan Chu Trinh, Hà Nội', '2025-11-26', '2025-11-26'),
+('CUS114', 'US114', 'Võ Văn Quang', 'vovanquang@example.com', '0900000114', '73 Nguyễn Du, Hà Nội', '2024-11-24', '2024-11-24'),
+('CUS115', 'US115', 'Trần Thị Dung', 'trầnthidung@example.com', '0900000115', '157 Trần Phú, Hà Nội', '2024-11-25', '2024-11-25'),
+('CUS116', 'US116', 'Trương Văn Quang', 'truongvanquang@example.com', '0900000116', '186 Lý Thường Kiệt, Hà Nội', '2024-11-26', '2025-11-15'),
+('CUS117', 'US117', 'Trần Văn Phúc', 'trầnvanphuc@example.com', '0900000117', '52 Lê Lợi, Hà Nội', '2024-11-27', '2025-11-16'),
+('CUS118', 'US118', 'Lê Thị Mai', 'lethimai@example.com', '0900000118', '148 Nguyễn Trãi, Hà Nội', '2024-11-28', '2024-11-28'),
+('CUS119', 'US119', 'Phạm Thị Lan', 'phamthilan@example.com', '0900000119', '173 Trần Hưng Đạo, Hà Nội', '2024-11-29', '2024-11-29'),
+('CUS120', 'US120', 'Đỗ Văn An', 'dỗvanan@example.com', '0900000120', '197 Hai Bà Trưng, Hà Nội', '2024-11-30', '2024-11-30'),
+('CUS121', 'US121', 'Hoàng Thị Phương', 'hoangthiphuong@example.com', '0900000121', '29 Bà Triệu, Hà Nội', '2024-11-01', '2024-11-01'),
+('CUS122', 'US122', 'Võ Thị Hạnh', 'vothihanh@example.com', '0900000122', '164 Phan Chu Trinh, Hà Nội', '2024-11-02', '2024-11-02'),
+('CUS123', 'US123', 'Lê Văn Huy', 'levanhuy@example.com', '0900000123', '199 Nguyễn Du, Hà Nội', '2024-11-03', '2024-11-03'),
+('CUS124', 'US124', 'Phan Văn Huy', 'phanvanhuy@example.com', '0900000124', '183 Trần Phú, Hà Nội', '2024-11-04', '2024-11-04'),
+('CUS125', 'US125', 'Võ Thị Lan', 'vothilan@example.com', '0900000125', '70 Lý Thường Kiệt, Hà Nội', '2024-11-05', '2024-11-05'),
+('CUS126', 'US126', 'Đặng Thị Hạnh', 'dặngthihanh@example.com', '0900000126', '156 Lê Lợi, Hà Nội', '2024-11-06', '2024-11-06'),
+('CUS127', 'US127', 'Võ Thị Thu', 'vothithu@example.com', '0900000127', '30 Nguyễn Trãi, Hà Nội', '2024-11-07', '2024-11-07'),
+('CUS128', 'US128', 'Nguyễn Thị Ngọc', 'nguyễnthingoc@example.com', '0900000128', '116 Trần Hưng Đạo, Hà Nội', '2024-11-08', '2024-11-08'),
+('CUS129', 'US129', 'Phan Thị Thu', 'phanthithu@example.com', '0900000129', '153 Hai Bà Trưng, Hà Nội', '2024-11-09', '2024-11-09'),
+('CUS130', 'US130', 'Hoàng Thị Hạnh', 'hoangthihanh@example.com', '0900000130', '120 Bà Triệu, Hà Nội', '2024-11-10', '2024-11-10'),
+('CUS131', 'US131', 'Phạm Văn Kiên', 'phamvankien@example.com', '0900000131', '80 Phan Chu Trinh, Hà Nội', '2024-11-11', '2024-11-11'),
+('CUS132', 'US132', 'Võ Văn Kiên', 'vovankien@example.com', '0900000132', '141 Nguyễn Du, Hà Nội', '2024-11-12', '2024-11-12'),
+('CUS133', 'US133', 'Phan Thị Dung', 'phanthidung@example.com', '0900000133', '148 Trần Phú, Hà Nội', '2024-11-13', '2024-11-13'),
+('CUS134', 'US134', 'Đặng Thị Hạnh', 'dặngthihanh@example.com', '0900000134', '95 Lý Thường Kiệt, Hà Nội', '2024-11-14', '2024-11-14'),
+('CUS135', 'US135', 'Lê Thị Mai', 'lethimai@example.com', '0900000135', '44 Lê Lợi, Hà Nội', '2024-11-15', '2024-11-15'),
+('CUS136', 'US136', 'Lê Văn Cường', 'levancuờng@example.com', '0900000136', '102 Nguyễn Trãi, Hà Nội', '2024-11-16', '2024-11-16'),
+('CUS137', 'US137', 'Nguyễn Thị Thu', 'nguyễnthithu@example.com', '0900000137', '154 Trần Hưng Đạo, Hà Nội', '2024-11-17', '2024-11-17'),
+('CUS138', 'US138', 'Nguyễn Thị Mai', 'nguyễnthimai@example.com', '0900000138', '103 Hai Bà Trưng, Hà Nội', '2024-11-18', '2024-11-18'),
+('CUS139', 'US139', 'Trương Văn Phúc', 'truongvanphuc@example.com', '0900000139', '19 Bà Triệu, Hà Nội', '2024-11-19', '2024-11-19'),
+('CUS140', 'US140', 'Nguyễn Thị Hạnh', 'nguyễnthihanh@example.com', '0900000140', '166 Phan Chu Trinh, Hà Nội', '2024-11-20', '2024-11-20'),
+('CUS141', 'US141', 'Trần Thị Hạnh', 'trầnthihanh@example.com', '0900000141', '167 Nguyễn Du, Hà Nội', '2024-11-21', '2024-11-21'),
+('CUS142', 'US142', 'Đỗ Thị Lan', 'dỗthilan@example.com', '0900000142', '111 Trần Phú, Hà Nội', '2024-11-22', '2024-11-22'),
+('CUS143', 'US143', 'Đỗ Văn Cường', 'dỗvancuờng@example.com', '0900000143', '6 Lý Thường Kiệt, Hà Nội', '2024-11-23', '2024-11-23'),
+('CUS144', 'US144', 'Trương Văn Quang', 'truongvanquang@example.com', '0900000144', '135 Lê Lợi, Hà Nội', '2024-11-24', '2024-11-24'),
+('CUS145', 'US145', 'Nguyễn Văn Hoàng', 'nguyễnvanhoang@example.com', '0900000145', '77 Nguyễn Trãi, Hà Nội', '2024-11-25', '2024-11-25'),
+('CUS146', 'US146', 'Đặng Thị Hạnh', 'dặngthihanh@example.com', '0900000146', '133 Trần Hưng Đạo, Hà Nội', '2024-11-26', '2024-11-26'),
+('CUS147', 'US147', 'Võ Văn Tùng', 'vovantung@example.com', '0900000147', '111 Hai Bà Trưng, Hà Nội', '2024-11-27', '2024-11-27'),
+('CUS148', 'US148', 'Hoàng Thị Bình', 'hoangthibinh@example.com', '0900000148', '133 Bà Triệu, Hà Nội', '2024-11-28', '2024-11-28'),
+('CUS149', 'US149', 'Phan Thị Lan', 'phanthilan@example.com', '0900000149', '179 Phan Chu Trinh, Hà Nội', '2024-11-29', '2024-11-29'),
+('CUS150', 'US150', 'Lê Văn Nam', 'levannam@example.com', '0900000150', '145 Nguyễn Du, Hà Nội', '2024-11-30', '2024-11-30'),
+('CUS151', 'US151', 'Lê Thị Dung', 'lethidung@example.com', '0900000151', '130 Trần Phú, Hà Nội', '2024-11-01', '2024-11-01'),
+('CUS152', 'US152', 'Hoàng Thị Mai', 'hoangthimai@example.com', '0900000152', '63 Lý Thường Kiệt, Hà Nội', '2024-11-02', '2024-11-02'),
+('CUS153', 'US153', 'Lê Văn Huy', 'levanhuy@example.com', '0900000153', '35 Lê Lợi, Hà Nội', '2024-11-03', '2024-11-03'),
+('CUS154', 'US154', 'Nguyễn Văn Bình', 'nguyễnvanbinh@example.com', '0900000154', '195 Nguyễn Trãi, Hà Nội', '2024-11-04', '2024-11-04'),
+('CUS155', 'US155', 'Phan Thị Lan', 'phanthilan@example.com', '0900000155', '137 Trần Hưng Đạo, Hà Nội', '2024-11-05', '2024-11-05'),
+('CUS156', 'US156', 'Đỗ Văn Đông', 'dỗvandong@example.com', '0900000156', '93 Hai Bà Trưng, Hà Nội', '2024-11-06', '2024-11-06'),
+('CUS157', 'US157', 'Lê Thị Dung', 'lethidung@example.com', '0900000157', '102 Bà Triệu, Hà Nội', '2024-11-07', '2024-11-07'),
+('CUS158', 'US158', 'Hoàng Thị Mai', 'hoangthimai@example.com', '0900000158', '101 Phan Chu Trinh, Hà Nội', '2024-11-08', '2024-11-08'),
+('CUS159', 'US159', 'Trương Thị Thu', 'truongthithu@example.com', '0900000159', '41 Nguyễn Du, Hà Nội', '2024-11-09', '2024-11-09'),
+('CUS160', 'US160', 'Đỗ Thị Bình', 'dỗthibinh@example.com', '0900000160', '24 Trần Phú, Hà Nội', '2024-11-10', '2024-11-10'),
+('CUS161', 'US161', 'Đỗ Văn Quang', 'dỗvanquang@example.com', '0900000161', '48 Lý Thường Kiệt, Hà Nội', '2024-11-11', '2024-11-11'),
+('CUS162', 'US162', 'Nguyễn Văn Bình', 'nguyễnvanbinh@example.com', '0900000162', '43 Lê Lợi, Hà Nội', '2024-11-12', '2024-11-12'),
+('CUS163', 'US163', 'Phạm Văn Phúc', 'phamvanphuc@example.com', '0900000163', '200 Nguyễn Trãi, Hà Nội', '2024-11-13', '2024-11-13'),
+('CUS164', 'US164', 'Phạm Văn Tùng', 'phamvantung@example.com', '0900000164', '133 Trần Hưng Đạo, Hà Nội', '2024-11-14', '2024-11-14'),
+('CUS165', 'US165', 'Phan Văn Bình', 'phanvanbinh@example.com', '0900000165', '28 Hai Bà Trưng, Hà Nội', '2024-11-15', '2024-11-15'),
+('CUS166', 'US166', 'Đỗ Văn An', 'dỗvanan@example.com', '0900000166', '170 Bà Triệu, Hà Nội', '2024-11-16', '2024-11-16'),
+('CUS167', 'US167', 'Trần Thị Dung', 'trầnthidung@example.com', '0900000167', '115 Phan Chu Trinh, Hà Nội', '2024-11-17', '2024-11-17'),
+('CUS168', 'US168', 'Trương Thị Bình', 'truongthibinh@example.com', '0900000168', '105 Nguyễn Du, Hà Nội', '2024-11-18', '2024-11-18'),
+('CUS169', 'US169', 'Phan Thị Mai', 'phanthimai@example.com', '0900000169', '93 Trần Phú, Hà Nội', '2024-11-19', '2024-11-19'),
+('CUS170', 'US170', 'Hoàng Văn Bình', 'hoangvanbinh@example.com', '0900000170', '161 Lý Thường Kiệt, Hà Nội', '2024-11-20', '2024-11-20'),
+('CUS171', 'US171', 'Trần Thị Mai', 'trầnthimai@example.com', '0900000171', '129 Lê Lợi, Hà Nội', '2024-11-21', '2024-11-21'),
+('CUS172', 'US172', 'Nguyễn Văn Quang', 'nguyễnvanquang@example.com', '0900000172', '46 Nguyễn Trãi, Hà Nội', '2024-11-22', '2024-11-22'),
+('CUS173', 'US173', 'Trần Thị Ngọc', 'trầnthingoc@example.com', '0900000173', '17 Trần Hưng Đạo, Hà Nội', '2024-11-23', '2024-11-23'),
+('CUS174', 'US174', 'Đặng Thị Lan', 'dặngthilan@example.com', '0900000174', '30 Hai Bà Trưng, Hà Nội', '2024-11-24', '2024-11-24'),
+('CUS175', 'US175', 'Phạm Văn Hoàng', 'phamvanhoang@example.com', '0900000175', '26 Bà Triệu, Hà Nội', '2024-11-25', '2024-11-25'),
+('CUS176', 'US176', 'Phạm Thị Hạnh', 'phamthihanh@example.com', '0900000176', '30 Phan Chu Trinh, Hà Nội', '2024-11-26', '2024-11-26'),
+('CUS177', 'US177', 'Hoàng Thị Phương', 'hoangthiphuong@example.com', '0900000177', '56 Nguyễn Du, Hà Nội', '2024-11-27', '2024-11-27'),
+('CUS178', 'US178', 'Phạm Văn Bình', 'phamvanbinh@example.com', '0900000178', '189 Trần Phú, Hà Nội', '2024-11-28', '2024-11-28'),
+('CUS179', 'US179', 'Võ Thị Bình', 'vothibinh@example.com', '0900000179', '175 Lý Thường Kiệt, Hà Nội', '2024-11-29', '2024-11-29'),
+('CUS180', 'US180', 'Võ Văn Huy', 'vovanhuy@example.com', '0900000180', '166 Lê Lợi, Hà Nội', '2024-11-30', '2024-11-30'),
+('CUS181', 'US181', 'Võ Văn Bình', 'vovanbinh@example.com', '0900000181', '124 Nguyễn Trãi, Hà Nội', '2024-11-01', '2024-11-01'),
+('CUS182', 'US182', 'Nguyễn Thị Hạnh', 'nguyễnthihanh@example.com', '0900000182', '97 Trần Hưng Đạo, Hà Nội', '2024-11-02', '2024-11-02'),
+('CUS183', 'US183', 'Trương Thị Lan', 'truongthilan@example.com', '0900000183', '17 Hai Bà Trưng, Hà Nội', '2024-11-03', '2024-11-03'),
+('CUS184', 'US184', 'Phan Thị Lan', 'phanthilan@example.com', '0900000184', '2 Bà Triệu, Hà Nội', '2024-11-04', '2024-11-04'),
+('CUS185', 'US185', 'Võ Văn Huy', 'vovanhuy@example.com', '0900000185', '129 Phan Chu Trinh, Hà Nội', '2024-11-05', '2024-11-05'),
+('CUS186', 'US186', 'Phạm Văn Huy', 'phamvanhuy@example.com', '0900000186', '159 Nguyễn Du, Hà Nội', '2024-11-06', '2024-11-06'),
+('CUS187', 'US187', 'Hoàng Văn Huy', 'hoangvanhuy@example.com', '0900000187', '146 Trần Phú, Hà Nội', '2024-11-07', '2024-11-07'),
+('CUS188', 'US188', 'Trần Văn Huy', 'trầnvanhuy@example.com', '0900000188', '170 Lý Thường Kiệt, Hà Nội', '2024-11-08', '2024-11-08'),
+('CUS189', 'US189', 'Lê Thị Mai', 'lethimai@example.com', '0900000189', '69 Lê Lợi, Hà Nội', '2024-11-09', '2024-11-09'),
+('CUS190', 'US190', 'Hoàng Văn Quang', 'hoangvanquang@example.com', '0900000190', '29 Nguyễn Trãi, Hà Nội', '2024-11-10', '2024-11-10'),
+('CUS191', 'US191', 'Võ Văn Huy', 'vovanhuy@example.com', '0900000191', '54 Trần Hưng Đạo, Hà Nội', '2024-11-11', '2024-11-11'),
+('CUS192', 'US192', 'Phan Thị Lan', 'phanthilan@example.com', '0900000192', '22 Hai Bà Trưng, Hà Nội', '2024-11-12', '2024-11-12'),
+('CUS193', 'US193', 'Lê Thị Lan', 'lethilan@example.com', '0900000193', '154 Bà Triệu, Hà Nội', '2024-11-13', '2024-11-13'),
+('CUS194', 'US194', 'Hoàng Văn Quang', 'hoangvanquang@example.com', '0900000194', '108 Phan Chu Trinh, Hà Nội', '2024-11-14', '2024-11-14'),
+('CUS195', 'US195', 'Phạm Văn Phúc', 'phamvanphuc@example.com', '0900000195', '89 Nguyễn Du, Hà Nội', '2024-11-15', '2024-11-15'),
+('CUS196', 'US196', 'Trần Thị Mai', 'trầnthimai@example.com', '0900000196', '144 Trần Phú, Hà Nội', '2024-11-16', '2024-11-16'),
+('CUS197', 'US197', 'Trần Thị Dung', 'trầnthidung@example.com', '0900000197', '37 Lý Thường Kiệt, Hà Nội', '2024-11-17', '2024-11-17'),
+('CUS198', 'US198', 'Phạm Văn Bình', 'phamvanbinh@example.com', '0900000198', '198 Lê Lợi, Hà Nội', '2024-11-18', '2024-11-18'),
+('CUS199', 'US199', 'Nguyễn Thị Bình', 'nguyễnthibinh@example.com', '0900000199', '59 Nguyễn Trãi, Hà Nội', '2024-11-19', '2024-11-19'),
+('CUS200', 'US200', 'Lê Thị Hạnh', 'lethihanh@example.com', '0900000200', '73 Trần Hưng Đạo, Hà Nội', '2024-11-20', '2024-11-20');
 
-INSERT INTO orders (order_id, customer_id, order_date, completed_date, order_channel, direct_delivery, subtotal, shipping_cost, final_total, status, payment_status, payment_method, staff_id, delivery_staff_id)
-VALUES
-('ORD1','CUS1','2024-11-05 10:15:00','2024-11-06 14:20:00','Online',FALSE,6020000,20000,6040000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE01','SHIP01'),
-('ORD2','CUS2','2024-11-07 11:30:00','2024-11-08 16:00:00','Trực tiếp',TRUE,3050000,0,3050000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD3','CUS3','2024-11-10 09:45:00','2024-11-11 12:30:00','Online',FALSE,420000,15000,435000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
-('ORD4','CUS4','2024-11-12 14:00:00',NULL,'Trực tiếp',TRUE,3000000,0,3000000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE01',NULL),
-('ORD5','CUS5','2024-11-15 13:20:00',NULL,'Trực tiếp',TRUE,2500000,0,2500000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD6','CUS6','2024-11-16 10:30:00','2024-11-17 15:00:00','Online',FALSE,4500000,20000,4520000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP01'),
-('ORD7','CUS7','2024-11-18 11:15:00',NULL,'Trực tiếp',TRUE,30200000,0,30200000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE01',NULL),
-('ORD8','CUS8','2024-11-20 14:20:00','2024-11-21 16:45:00','Online',FALSE,520000,25000,545000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS02','SHIP02'),
-('ORD9','CUS9','2024-11-22 09:50:00',NULL,'Trực tiếp',TRUE,280000,0,280000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE03',NULL),
-('ORD10','CUS10','2024-11-24 13:10:00','2024-11-25 14:30:00','Online',FALSE,6000000,30000,6030000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP03'),
-('ORD11','CUS11','2024-11-26 10:00:00',NULL,'Trực tiếp',TRUE,3100000,0,3100000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD12','CUS12','2024-11-28 15:30:00','2024-11-29 16:20:00','Online',FALSE,4000000,20000,4020000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP01'),
-
--- Tháng 12/2024 (CUS13 – CUS21)
-
-('ORD13','CUS13','2024-12-02 09:15:00','2024-12-03 11:30:00','Online',FALSE,5000000,20000,5020000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP02'),
-('ORD14','CUS14','2024-12-04 10:20:00',NULL,'Trực tiếp',TRUE,3500000,0,3500000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD15','CUS15','2024-12-06 11:45:00','2024-12-07 14:50:00','Online',FALSE,420000,15000,435000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP03'),
-('ORD16','CUS16','2024-12-08 14:10:00',NULL,'Trực tiếp',TRUE,300000,0,300000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE01',NULL),
-('ORD17','CUS17','2024-12-10 10:05:00','2024-12-11 13:20:00','Online',FALSE,460000,20000,480000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS02','SHIP01'),
-('ORD18','CUS18','2024-12-12 12:30:00',NULL,'Trực tiếp',TRUE,3200000,0,3200000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD19','CUS19','2024-12-14 09:50:00','2024-12-15 11:40:00','Online',FALSE,510000,25000,535000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE01','SHIP02'),
-('ORD20','CUS20','2024-12-16 15:10:00',NULL,'Trực tiếp',TRUE,28000000,0,28000000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD21','CUS21','2024-12-18 11:25:00','2024-12-19 13:30:00','Online',FALSE,600000,30000,630000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP03'),
-('ORD22','CUS22','2025-01-03 09:30:00','2025-01-04 12:00:00','Online',FALSE,5000000,20000,5020000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
-('ORD23','CUS23','2025-01-05 10:45:00',NULL,'Trực tiếp',TRUE,35000000,0,35000000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD24','CUS24','2025-01-07 11:50:00','2025-01-08 14:20:00','Online',FALSE,420000,15000,435000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
-('ORD25','CUS25','2025-01-09 13:10:00',NULL,'Trực tiếp',TRUE,3000000,0,3000000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE01',NULL),
-('ORD26','CUS26','2025-01-11 10:25:00','2025-01-12 12:50:00','Online',FALSE,460000,20000,480000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS02','SHIP03'),
-('ORD27','CUS27','2025-01-13 14:30:00',NULL,'Trực tiếp',TRUE,3200000,0,3200000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD28','CUS28','2025-01-15 09:55:00','2025-01-16 11:40:00','Online',FALSE,510000,25000,535000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP01'),
-('ORD29','CUS29','2025-01-17 15:05:00',NULL,'Trực tiếp',TRUE,2800000,0,2800000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD30','CUS30','2025-01-19 11:20:00','2025-01-20 13:10:00','Online',FALSE,6000000,30000,6030000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP02');
-
--- Tháng 02/2025 (CUS31 – CUS39)
-INSERT INTO orders (order_id, customer_id, order_date, completed_date, order_channel, direct_delivery, subtotal, shipping_cost, final_total, status, payment_status, payment_method, staff_id, delivery_staff_id)
-VALUES
-('ORD31','CUS31','2025-02-01 09:00:00','2025-02-02 11:30:00','Online',FALSE,5020000,20000,5040000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP01'),
-('ORD32','CUS32','2025-02-03 10:10:00',NULL,'Trực tiếp',TRUE,34000000,0,34000000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD33','CUS33','2025-02-05 11:20:00','2025-02-06 13:50:00','Online',FALSE,480000,15000,495000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03','SHIP02'),
-('ORD34','CUS34','2025-02-07 14:30:00',NULL,'Trực tiếp',TRUE,310000,0,310000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD35','CUS35','2025-02-09 09:45:00','2025-02-10 12:10:00','Online',FALSE,500000,20000,520000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS02','SHIP03'),
-('ORD36','CUS36','2025-02-11 12:00:00',NULL,'Trực tiếp',TRUE,3300000,0,3300000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD37','CUS37','2025-02-13 10:15:00','2025-02-14 11:50:00','Online',FALSE,510000,25000,535000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
-('ORD38','CUS38','2025-02-15 13:30:00',NULL,'Trực tiếp',TRUE,2900000,0,2900000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD39','CUS39','2025-02-17 11:40:00','2025-02-18 14:00:00','Online',FALSE,600000,30000,630000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','SALE03','SHIP02'),
-('ORD40','CUS40','2025-03-01 09:20:00','2025-03-02 12:10:00','Online',FALSE,530000,20000,550000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP03'),
-('ORD41','CUS41','2025-03-03 10:35:00',NULL,'Trực tiếp',TRUE,3600000,0,3600000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD42','CUS42','2025-03-05 11:50:00','2025-03-06 13:40:00','Online',FALSE,470000,15000,485000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP01'),
-('ORD43','CUS43','2025-03-07 14:05:00',NULL,'Trực tiếp',TRUE,3200000,0,3200000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD44','CUS44','2025-03-09 10:15:00','2025-03-10 12:50:00','Online',FALSE,500000,20000,520000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS02','SHIP02'),
-('ORD45','CUS45','2025-03-11 12:30:00',NULL,'Trực tiếp',TRUE,3100000,0,3100000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD46','CUS46','2025-03-13 09:45:00','2025-03-14 11:30:00','Online',FALSE,520000,25000,545000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','SALE01','SHIP03'),
-('ORD47','CUS47','2025-03-15 13:00:00',NULL,'Trực tiếp',TRUE,30000000,0,30000000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD48','CUS48','2025-03-17 11:20:00','2025-03-18 13:10:00','Online',FALSE,6010000,30000,6040000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP01'),
-
--- Tháng 04/2025 (CUS49 – CUS57
-
-('ORD49','CUS49','2025-04-01 09:10:00','2025-04-02 12:00:00','Online',FALSE,5040000,20000,5060000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP02'),
-('ORD50','CUS50','2025-04-03 10:25:00',NULL,'Trực tiếp',TRUE,3500000,0,3500000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD51','CUS51','2025-04-05 11:40:00','2025-04-06 13:50:00','Online',FALSE,4080000,15000,4095000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP03'),
-('ORD52','CUS52','2025-04-07 14:00:00',NULL,'Trực tiếp',TRUE,320000,0,320000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','OS01',NULL),
-('ORD53','CUS53','2025-04-09 10:10:00','2025-04-10 12:40:00','Online',FALSE,5000000,20000,5020000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS02','SHIP01'),
-('ORD54','CUS54','2025-04-11 12:30:00',NULL,'Trực tiếp',TRUE,3100000,0,3100000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD55','CUS55','2025-04-13 09:50:00','2025-04-14 11:45:00','Online',FALSE,5020000,25000,5045000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP02'),
-('ORD56','CUS56','2025-04-15 13:10:00',NULL,'Trực tiếp',TRUE,300000,0,300000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD57','CUS57','2025-04-17 11:25:00','2025-04-18 13:20:00','Online',FALSE,6010000,30000,6040000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP03'),
-('ORD58','CUS58','2025-05-01 09:15:00','2025-05-02 11:30:00','Online',FALSE,530000,20000,550000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
-('ORD59','CUS59','2025-05-03 10:20:00',NULL,'Trực tiếp',TRUE,360000,0,360000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD60','CUS60','2025-05-05 11:45:00','2025-05-06 14:00:00','Online',FALSE,4080000,15000,4095000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
-('ORD61','CUS61','2025-05-07 14:00:00',NULL,'Trực tiếp',TRUE,320000,0,320000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD62','CUS62','2025-05-09 10:10:00','2025-05-10 12:40:00','Online',FALSE,5000000,20000,5020000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS02','SHIP03'),
-('ORD63','CUS63','2025-05-11 12:30:00',NULL,'Trực tiếp',TRUE,310000,0,310000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD64','CUS64','2025-05-13 09:50:00','2025-05-14 11:45:00','Online',FALSE,5020000,25000,5045000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP01'),
-('ORD65','CUS65','2025-05-15 13:10:00',NULL,'Trực tiếp',TRUE,3000000,0,3000000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD66','CUS66','2025-05-17 11:25:00','2025-05-18 13:20:00','Online',FALSE,6010000,30000,6040000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP02'),
-('ORD67','CUS67','2025-06-01 09:20:00','2025-06-02 12:10:00','Online',FALSE,530000,20000,550000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP03'),
-('ORD68','CUS68','2025-06-03 10:35:00',NULL,'Trực tiếp',TRUE,3600000,0,3600000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD69','CUS69','2025-06-05 11:50:00','2025-06-06 13:40:00','Online',FALSE,4070000,15000,4085000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03','SHIP01'),
-('ORD70','CUS70','2025-06-07 14:05:00',NULL,'Trực tiếp',TRUE,3200000,0,3200000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD71','CUS71','2025-06-09 10:15:00','2025-06-10 12:50:00','Online',FALSE,5000000,20000,5020000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS02','SHIP02'),
-('ORD72','CUS72','2025-06-11 12:30:00',NULL,'Trực tiếp',TRUE,3100000,0,3100000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD73','CUS73','2025-06-13 09:50:00','2025-06-14 11:45:00','Online',FALSE,5200000,25000,5045000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP03'),
-('ORD74','CUS74','2025-06-15 13:10:00',NULL,'Trực tiếp',TRUE,3000000,0,3000000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD75','CUS75','2025-06-17 11:25:00','2025-06-18 13:20:00','Online',FALSE,6010000,30000,6040000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP01'),
-('ORD76','CUS76','2025-07-01 09:15:00','2025-07-02 11:30:00','Online',FALSE,5030000,20000,5050000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP02'),
-('ORD77','CUS77','2025-07-03 10:20:00',NULL,'Trực tiếp',TRUE,360000,0,360000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD78','CUS78','2025-07-05 11:45:00','2025-07-06 14:00:00','Online',FALSE,4800000,15000,4815000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP03'),
-('ORD79','CUS79','2025-07-07 14:00:00',NULL,'Trực tiếp',TRUE,3200000,0,3200000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD80','CUS80','2025-07-09 10:10:00','2025-07-10 12:40:00','Online',FALSE,500000,20000,520000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS02','SHIP01');
-INSERT INTO orders (order_id, customer_id, order_date, completed_date, order_channel, direct_delivery, subtotal, shipping_cost, final_total, status, payment_status, payment_method, staff_id, delivery_staff_id)
-VALUES
-('ORD81','CUS81','2025-07-11 12:30:00',NULL,'Trực tiếp',TRUE,310000,0,310000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD82','CUS82','2025-07-13 09:50:00','2025-07-14 11:45:00','Online',FALSE,520000,25000,545000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP02'),
-('ORD83','CUS83','2025-07-15 13:10:00',NULL,'Trực tiếp',TRUE,300000,0,300000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD84','CUS84','2025-07-17 11:25:00','2025-07-18 13:20:00','Online',FALSE,610000,30000,640000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP03'),
-('ORD85','CUS85','2025-07-18 09:20:00','2025-07-20 12:10:00','Online',FALSE,530000,20000,550000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP01'),
-('ORD86','CUS86','2025-07-19 10:35:00',NULL,'Trực tiếp',TRUE,360000,0,360000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD87','CUS87','2025-07-29 11:50:00','2025-07-30 13:40:00','Online',FALSE,470000,15000,485000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP02'),
-('ORD88','CUS88','2025-07-30 14:05:00',NULL,'Trực tiếp',TRUE,320000,0,320000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD89','CUS89','2025-07-30 10:15:00','2025-07-31 12:50:00','Online',FALSE,500000,20000,520000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS02','SHIP03'),
-('ORD90','CUS90','2025-07-31 12:30:00',NULL,'Trực tiếp',TRUE,310000,0,310000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL);
--- Tháng 08/2025 (CUS85 – CUS93)
-INSERT INTO orders (order_id, customer_id, order_date, completed_date, order_channel, direct_delivery, subtotal, shipping_cost, final_total, status, payment_status, payment_method, staff_id, delivery_staff_id)
-VALUES
-('ORD91','CUS91','2025-08-13 09:50:00','2025-08-14 11:45:00','Online',FALSE,520000,25000,545000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
-('ORD92','CUS92','2025-08-15 13:10:00',NULL,'Trực tiếp',TRUE,30000000,0,30000000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD93','CUS93','2025-08-17 11:25:00','2025-08-18 13:20:00','Online',FALSE,610000,30000,640000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
-('ORD94','CUS94','2025-09-01 09:15:00','2025-09-02 11:30:00','Online',FALSE,530000,20000,550000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP03'),
-('ORD95','CUS95','2025-09-03 10:20:00',NULL,'Trực tiếp',TRUE,360000,0,360000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD96','CUS96','2025-09-05 11:45:00','2025-09-06 14:00:00','Online',FALSE,480000,15000,495000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP01'),
-('ORD97','CUS97','2025-09-07 14:00:00',NULL,'Trực tiếp',TRUE,320000,0,320000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD98','CUS98','2025-09-09 10:10:00','2025-09-10 12:40:00','Online',FALSE,500000,20000,520000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS02','SHIP02'),
-('ORD99','CUS99','2025-09-11 12:30:00',NULL,'Trực tiếp',TRUE,310000,0,310000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD100','CUS100','2025-09-13 09:50:00','2025-09-14 11:45:00','Online',FALSE,520000,25000,545000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP03'),
-('ORD101','CUS101','2025-09-15 13:10:00',NULL,'Trực tiếp',TRUE,30000000,0,30000000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD102','CUS102','2025-09-17 11:25:00','2025-09-18 13:20:00','Online',FALSE,610000,30000,640000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP01'),
-
-
--- Tháng 10/2025 (CUS103 – CUS111)
-
-('ORD103','CUS103','2025-10-01 09:20:00','2025-10-02 12:10:00','Online',FALSE,530000,20000,550000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP02'),
-('ORD104','CUS104','2025-10-03 10:35:00',NULL,'Trực tiếp',TRUE,360000,0,360000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD105','CUS105','2025-10-05 11:50:00','2025-10-06 13:40:00','Online',FALSE,470000,15000,485000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP03'),
-('ORD106','CUS106','2025-10-07 14:05:00',NULL,'Trực tiếp',TRUE,320000,0,320000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD107','CUS107','2025-10-09 10:15:00','2025-10-10 12:50:00','Online',FALSE,500000,20000,520000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS02','SHIP01'),
-('ORD108','CUS108','2025-10-11 12:30:00',NULL,'Trực tiếp',TRUE,310000,0,310000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD109','CUS109','2025-10-13 09:50:00','2025-10-14 11:45:00','Online',FALSE,520000,25000,545000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP02'),
-('ORD110','CUS110','2025-10-15 13:10:00',NULL,'Trực tiếp',TRUE,300000,0,300000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD111','CUS111','2025-10-17 11:25:00','2025-10-18 13:20:00','Online',FALSE,610000,30000,640000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP03'),
-('ORD112','CUS112','2025-10-21 09:15:00','2025-10-22 11:30:00','Online',FALSE,530000,20000,550000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS01','SHIP01'),
-('ORD113','CUS113','2025-10-23 10:20:00',NULL,'Trực tiếp',TRUE,36000000,0,36000000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD114','CUS114','2025-10-25 11:45:00','2025-10-26 14:00:00','Online',FALSE,480000,15000,495000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS03','SHIP02'),
-('ORD115','CUS115','2025-10-27 14:00:00',NULL,'Trực tiếp',TRUE,320000,0,320000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL);
--- tháng 11/2025
-INSERT INTO `orders` 
-(order_id, customer_id, order_date, completed_date, order_channel, direct_delivery, subtotal, shipping_cost, final_total, status, payment_status, payment_method, staff_id, delivery_staff_id)
-VALUES
--- Đơn tháng 11/2025
-('ORD116','CUS116','2025-11-15 09:30:00',NULL,'Online',FALSE,500000,20000,520000,'Đang Giao','Chưa Thanh Toán','Tiền mặt','OS02','SHIP01'),
-('ORD117','CUS117','2025-11-16 10:10:00','2025-11-16 10:10:00','Trực tiếp',TRUE,450000,0,450000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD118','CUS101','2025-11-17 12:20:00','2025-11-18 13:45:00','Online',FALSE,600000,25000,625000,'Hoàn Thành','Đã Thanh Toán','Thẻ tín dụng','OS01','SHIP02'),
-('ORD119','CUS102','2025-11-18 09:50:00','2025-11-18 09:50:00','Trực tiếp',TRUE,30000000,0,30000000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE01',NULL),
-('ORD120','CUS103','2025-11-19 11:15:00',NULL,'Online',FALSE,520000,20000,540000,'Đang Xử Lý','Chưa Thanh Toán','Tiền mặt','OS03','SHIP03'),
-('ORD121','CUS104','2025-11-20 10:30:00','2025-11-20 10:30:00','Trực tiếp',TRUE,370000,0,370000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE02',NULL),
-('ORD122','CUS105','2025-11-21 14:10:00','2025-11-22 12:50:00','Online',FALSE,550000,15000,565000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','OS02','SHIP01'),
-('ORD123','CUS106','2025-11-22 09:05:00','2025-11-22 09:05:00','Trực tiếp',TRUE,31000000,0,31000000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD124','CUS107','2025-11-23 13:25:00',NULL,'Online',FALSE,480000,20000,500000,'Đang Giao','Chưa Thanh Toán','Thẻ tín dụng','OS01','SHIP02'),
-('ORD125','CUS108','2025-11-24 10:45:00','2025-11-24 10:45:00','Trực tiếp',TRUE,40000000,0,40000000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE01',NULL),
-('ORD126','CUS109','2025-11-25 11:55:00','2025-11-26 13:30:00','Online',FALSE,6000000,25000,6025000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','OS03','SHIP03'),
-('ORD127','CUS110','2025-11-26 09:40:00','2025-11-26 09:40:00','Trực tiếp',TRUE,350000,0,350000,'Hoàn Thành','Đã Thanh Toán','Chuyển khoản','SALE02',NULL),
-('ORD128','CUS111','2025-11-26 10:50:00',NULL,'Online',FALSE,500000,20000,520000,'Đang Xử Lý','Chưa Thanh Toán','Tiền mặt','OS01','SHIP01'),
-('ORD129','CUS112','2025-11-26 12:30:00','2025-11-26 12:30:00','Trực tiếp',TRUE,450000,0,450000,'Hoàn Thành','Đã Thanh Toán','Tiền mặt','SALE03',NULL),
-('ORD130','CUS113','2025-11-26 09:15:00',NULL,'Online',FALSE,520000,20000,540000,'Đang Giao','Chưa Thanh Toán','Thẻ tín dụng','OS02','SHIP02');
-
-INSERT INTO order_details (order_id, product_id, quantity, price_at_order) VALUES
-('ORD1','P0148',2,55887),
-('ORD1','P0001',2,120000),
-('ORD1','P0177',5,113425),
-('ORD1','P0112',4,65627),
-('ORD2','P0038',1,89650),
-('ORD2','P0034',1,111521),
-('ORD2','P0167',2,132690),
-('ORD2','P0110',4,88077),
-('ORD2','P0156',4,133895),
-('ORD3','P0008',1,131619),
-('ORD3','P0044',5,51606),
-('ORD3','P0099',2,159078),
-('ORD4','P0041',5,190486),
-('ORD4','P0059',2,178216),
-('ORD4','P0087',1,100212),
-('ORD5','P0133',1,172240),
-('ORD5','P0014',3,133263),
-('ORD5','P0180',4,60825),
-('ORD5','P0168',3,137491),
-('ORD6','P0032',4,194035),
-('ORD6','P0081',5,108686),
-('ORD6','P0075',4,192852),
-('ORD6','P0119',4,68035),
-('ORD6','P0072',5,94702),
-('ORD7','P0085',3,109626),
-('ORD7','P0126',3,110767),
-('ORD7','P0060',5,110534),
-('ORD8','P0048',3,175605),
-('ORD8','P0132',5,153198),
-('ORD8','P0061',2,92664),
-('ORD9','P0058',1,136313),
-('ORD9','P0145',4,111045),
-('ORD9','P0140',3,153159),
-('ORD10','P0063',5,116285),
-('ORD10','P0161',4,94945),
-('ORD10','P0111',3,87305),
-('ORD10','P0032',1,91453),
-('ORD10','P0072',4,96056),
-('ORD11','P0058',3,175882),
-('ORD11','P0038',1,113466),
-('ORD11','P0065',1,119562),
-('ORD11','P0054',4,64221),
-('ORD11','P0027',5,70464),
-('ORD12','P0039',4,56936),
-('ORD12','P0162',5,72290),
-('ORD12','P0077',5,128673),
-('ORD12','P0090',2,110538),
-('ORD12','P0009',1,114713),
-('ORD13','P0069',5,87979),
-('ORD13','P0007',1,146928),
-('ORD13','P0106',2,55068),
-('ORD14','P0058',3,147888),
-('ORD14','P0040',4,72116),
-('ORD14','P0131',3,169000),
-('ORD15','P0038',4,65295),
-('ORD15','P0091',2,154335),
-('ORD15','P0142',4,177533),
-('ORD16','P0050',2,178226),
-('ORD16','P0124',5,165026),
-('ORD16','P0098',4,166259),
-('ORD16','P0027',5,198881),
-('ORD16','P0149',5,192977),
-('ORD17','P0097',5,129142),
-('ORD17','P0085',4,170896),
-('ORD17','P0058',3,186598),
-('ORD17','P0123',4,120358),
-('ORD17','P0033',1,74750),
-('ORD18','P0070',4,106930),
-('ORD18','P0005',1,75428),
-('ORD18','P0164',2,165058),
-('ORD19','P0062',2,52040),
-('ORD19','P0029',5,144632),
-('ORD19','P0124',2,165149),
-('ORD19','P0160',5,196906),
-('ORD19','P0021',4,170806),
-('ORD20','P0080',2,145815),
-('ORD20','P0037',2,121555),
-('ORD20','P0178',5,159672),
-('ORD20','P0119',2,189035),
-('ORD21','P0093',3,126502),
-('ORD21','P0134',3,170312),
-('ORD21','P0164',4,116893),
-('ORD22','P0035',4,155906),
-('ORD22','P0005',1,154854),
-('ORD22','P0164',2,118813),
-('ORD22','P0158',2,61495),
-('ORD23','P0152',5,128788),
-('ORD23','P0158',4,137075),
-('ORD23','P0082',4,131282),
-('ORD24','P0036',4,150634),
-('ORD24','P0144',3,54534),
-('ORD24','P0094',4,169993),
-('ORD24','P0146',5,124070),
-('ORD24','P0177',3,56411),
-('ORD25','P0063',3,154798),
-('ORD25','P0112',1,124505),
-('ORD25','P0102',1,57868),
-('ORD26','P0039',5,90287),
-('ORD26','P0107',2,125730),
-('ORD26','P0126',1,88791),
-('ORD27','P0116',4,63628),
-('ORD27','P0166',5,86855),
-('ORD27','P0037',3,197775),
-('ORD27','P0050',3,118936),
-('ORD27','P0066',5,169130),
-('ORD28','P0043',3,56116),
-('ORD28','P0175',5,116496),
-('ORD28','P0024',5,109668),
-('ORD28','P0068',1,61297),
-('ORD28','P0026',3,178654),
-('ORD29','P0172',3,188652),
-('ORD29','P0133',5,169181),
-('ORD29','P0029',3,150199),
-('ORD29','P0139',2,51843),
-('ORD29','P0148',2,119537),
-('ORD30','P0078',3,125973),
-('ORD30','P0100',2,56017),
-('ORD30','P0123',3,76204),
-('ORD30','P0169',5,133615),
-('ORD31','P0153',1,101443),
-('ORD31','P0131',5,98564),
-('ORD31','P0155',3,101796),
-('ORD31','P0115',1,163696),
-('ORD31','P0137',4,143272),
-('ORD32','P0169',5,147868),
-('ORD32','P0134',1,167413),
-('ORD32','P0019',5,147448),
-('ORD32','P0092',5,111198),
-('ORD33','P0007',3,94518),
-('ORD33','P0144',2,132515),
-('ORD33','P0082',5,58677),
-('ORD33','P0059',5,162358),
-('ORD33','P0053',1,192221),
-('ORD34','P0074',2,152960),
-('ORD34','P0096',5,123204),
-('ORD34','P0085',4,128178),
-('ORD35','P0152',3,154175),
-('ORD35','P0147',2,145412),
-('ORD35','P0100',1,170828),
-('ORD35','P0064',2,150085),
-('ORD36','P0151',3,58786),
-('ORD36','P0054',2,126334),
-('ORD36','P0165',1,135214),
-('ORD36','P0085',5,112986),
-('ORD36','P0058',4,137273),
-('ORD37','P0139',2,74135),
-('ORD37','P0118',1,79301),
-('ORD37','P0053',1,105878),
-('ORD37','P0090',4,150185),
-('ORD38','P0169',5,187513),
-('ORD38','P0165',3,57174),
-('ORD38','P0178',5,82641),
-('ORD38','P0160',5,180517),
-('ORD39','P0057',1,132221),
-('ORD39','P0158',1,169592),
-('ORD39','P0008',3,104373),
-('ORD39','P0120',3,139793),
-('ORD39','P0034',4,102123),
-('ORD40','P0104',4,134404),
-('ORD40','P0036',1,104778),
-('ORD40','P0075',4,164019),
-('ORD40','P0078',5,96727),
-('ORD40','P0114',1,59873),
-('ORD41','P0088',3,168201),
-('ORD41','P0063',3,113824),
-('ORD41','P0047',4,148284),
-('ORD41','P0141',3,114490),
-('ORD41','P0069',5,181753),
-('ORD42','P0059',1,161512),
-('ORD42','P0047',3,183665),
-('ORD42','P0099',5,145754),
-('ORD42','P0053',5,95441),
-('ORD42','P0101',5,174475),
-('ORD43','P0121',5,122946),
-('ORD43','P0084',1,152453),
-('ORD43','P0013',5,169830),
-('ORD43','P0033',5,108377),
-('ORD44','P0121',5,164547),
-('ORD44','P0116',1,79749),
-('ORD44','P0084',3,70470),
-('ORD45','P0064',2,108262),
-('ORD45','P0168',4,149514),
-('ORD45','P0029',1,197167),
-('ORD45','P0124',1,124311),
-('ORD45','P0117',5,61080),
-('ORD46','P0101',1,154344),
-('ORD46','P0091',5,167268),
-('ORD46','P0035',2,94901),
-('ORD46','P0099',5,191370),
-('ORD46','P0178',1,61425),
-('ORD47','P0157',2,174057),
-('ORD47','P0113',3,56627),
-('ORD47','P0085',2,170257),
-('ORD47','P0148',1,113247),
-('ORD48','P0158',4,76946),
-('ORD48','P0111',1,169172),
-('ORD48','P0058',2,128202),
-('ORD48','P0156',1,99634),
-('ORD48','P0057',3,81632),
-('ORD49','P0163',2,199850),
-('ORD49','P0004',1,142160),
-('ORD49','P0073',4,148122),
-('ORD50','P0036',4,137051),
-('ORD50','P0142',1,166181),
-('ORD50','P0122',1,196832),
-('ORD51','P0114',4,80394),
-('ORD51','P0125',5,122297),
-('ORD51','P0005',3,84867),
-('ORD51','P0160',2,73460),
-('ORD52','P0043',1,57335),
-('ORD52','P0131',1,52316),
-('ORD52','P0134',2,139760),
-('ORD52','P0175',5,63595),
-('ORD53','P0137',3,158207),
-('ORD53','P0044',2,79998),
-('ORD53','P0170',5,116178),
-('ORD53','P0072',4,84750),
-('ORD53','P0008',3,107339),
-('ORD54','P0038',3,162856),
-('ORD54','P0031',2,96823),
-('ORD54','P0173',2,161989),
-('ORD54','P0072',5,66439),
-('ORD55','P0046',5,92631),
-('ORD55','P0003',4,136310),
-('ORD55','P0088',2,191772),
-('ORD56','P0159',4,176910),
-('ORD56','P0142',1,193153),
-('ORD56','P0091',5,171137),
-('ORD57','P0042',3,96689),
-('ORD57','P0052',5,128212),
-('ORD57','P0179',1,176374),
-('ORD57','P0004',5,189761),
-('ORD57','P0105',3,90032),
-('ORD58','P0131',5,155545),
-('ORD58','P0125',3,181249),
-('ORD58','P0163',3,112661),
-('ORD58','P0164',1,108930),
-('ORD58','P0132',1,92598),
-('ORD59','P0151',1,177035),
-('ORD59','P0162',4,64367),
-('ORD59','P0001',2,123865),
-('ORD60','P0037',2,107886),
-('ORD60','P0125',2,147494),
-('ORD60','P0036',5,136565),
-('ORD60','P0071',1,55069),
-('ORD61','P0096',3,62775),
-('ORD61','P0022',4,160728),
-('ORD61','P0005',4,93898),
-('ORD61','P0053',5,100094),
-('ORD62','P0117',1,131196),
-('ORD62','P0088',4,92026),
-('ORD62','P0123',2,132534),
-('ORD62','P0084',3,97279),
-('ORD62','P0113',3,150815),
-('ORD63','P0144',2,147890),
-('ORD63','P0096',3,123534),
-('ORD63','P0004',2,170143),
-('ORD63','P0013',2,78955),
-('ORD64','P0119',3,141289),
-('ORD64','P0164',1,53242),
-('ORD64','P0118',2,52472),
-('ORD64','P0044',5,109420),
-('ORD64','P0175',5,134120),
-('ORD65','P0107',5,156163),
-('ORD65','P0149',3,135288),
-('ORD65','P0162',4,170888),
-('ORD66','P0012',1,174087),
-('ORD66','P0110',1,119163),
-('ORD66','P0043',2,145897),
-('ORD66','P0014',4,51935),
-('ORD67','P0150',4,133469),
-('ORD67','P0085',1,106015),
-('ORD67','P0158',1,95528),
-('ORD67','P0088',1,90778),
-('ORD68','P0115',3,171226),
-('ORD68','P0023',1,176704),
-('ORD68','P0067',3,133251),
-('ORD69','P0151',5,60224),
-('ORD69','P0159',1,96508),
-('ORD69','P0067',4,128087),
-('ORD70','P0007',3,192855),
-('ORD70','P0093',1,154766),
-('ORD70','P0140',3,65169),
-('ORD70','P0054',2,74634),
-('ORD71','P0061',4,154874),
-('ORD71','P0045',1,120838),
-('ORD71','P0173',4,182197),
-('ORD72','P0176',4,68939),
-('ORD72','P0050',3,82295),
-('ORD72','P0028',5,145049),
-('ORD73','P0040',1,174974),
-('ORD73','P0134',4,165238),
-('ORD73','P0112',1,150698),
-('ORD74','P0055',5,173872),
-('ORD74','P0051',3,96138),
-('ORD74','P0011',4,134860),
-('ORD75','P0083',3,197187),
-('ORD75','P0113',4,188420),
-('ORD75','P0174',1,189943),
-('ORD75','P0122',2,64626),
-('ORD75','P0152',3,124856),
-('ORD76','P0049',2,58099),
-('ORD76','P0017',3,119143),
-('ORD76','P0151',5,114667),
-('ORD77','P0162',2,139794),
-('ORD77','P0043',4,198317),
-('ORD77','P0101',5,77762),
-('ORD77','P0171',1,199309),
-('ORD78','P0080',2,136103),
-('ORD78','P0095',1,184252),
-('ORD78','P0015',1,59280),
-('ORD78','P0130',3,59047),
-('ORD79','P0036',4,183417),
-('ORD79','P0140',3,182645),
-('ORD79','P0151',3,103118),
-('ORD80','P0122',1,174981),
-('ORD80','P0065',1,178647),
-('ORD80','P0064',3,174942),
-('ORD81','P0063',2,81132),
-('ORD81','P0171',1,69557),
-('ORD81','P0065',2,63621),
-('ORD81','P0086',3,191612),
-('ORD82','P0095',2,80042),
-('ORD82','P0157',3,69728),
-('ORD82','P0137',3,169922),
-('ORD82','P0155',4,135320),
-('ORD82','P0050',5,52430),
-('ORD83','P0052',3,77439),
-('ORD83','P0123',5,143452),
-('ORD83','P0176',1,188814),
-('ORD83','P0172',3,61514),
-('ORD84','P0046',2,156705),
-('ORD84','P0073',1,77602),
-('ORD84','P0086',5,85264),
-('ORD84','P0082',5,97946),
-('ORD85','P0134',2,146098),
-('ORD85','P0087',3,112801),
-('ORD85','P0027',3,155740),
-('ORD86','P0113',5,166078),
-('ORD86','P0159',3,105838),
-('ORD86','P0114',4,68274),
-('ORD86','P0135',3,136029),
-('ORD86','P0175',5,90513),
-('ORD87','P0072',2,111374),
-('ORD87','P0128',1,69618),
-('ORD87','P0049',1,193469),
-('ORD87','P0096',4,91772),
-('ORD87','P0131',3,146149),
-('ORD88','P0004',5,110967),
-('ORD88','P0073',5,176911),
-('ORD88','P0022',4,180443),
-('ORD88','P0066',5,57430),
-('ORD88','P0036',5,113898),
-('ORD89','P0090',4,75094),
-('ORD89','P0026',4,118885),
-('ORD89','P0096',1,123465),
-('ORD89','P0108',3,173617),
-('ORD89','P0148',2,105974),
-('ORD90','P0139',5,82581),
-('ORD90','P0042',1,54741),
-('ORD90','P0023',5,161486),
-('ORD91','P0177',4,118781),
-('ORD91','P0058',5,154919),
-('ORD91','P0047',4,184446),
-('ORD92','P0044',4,69067),
-('ORD92','P0131',2,122176),
-('ORD92','P0169',2,61541),
-('ORD92','P0088',3,71904),
-('ORD93','P0027',4,148091),
-('ORD93','P0021',5,60979),
-('ORD93','P0077',2,50251),
-('ORD94','P0165',2,178653),
-('ORD94','P0022',1,75261),
-('ORD94','P0084',1,148003),
-('ORD94','P0047',2,142277),
-('ORD95','P0107',3,90568),
-('ORD95','P0073',1,50178),
-('ORD95','P0022',3,132756),
-('ORD95','P0034',3,129722),
-('ORD95','P0045',3,91088),
-('ORD96','P0126',2,132407),
-('ORD96','P0089',4,141763),
-('ORD96','P0023',4,67883),
-('ORD96','P0026',3,144328),
-('ORD96','P0062',3,185880),
-('ORD97','P0012',5,113863),
-('ORD97','P0146',4,84310),
-('ORD97','P0087',1,56716),
-('ORD98','P0115',5,85040),
-('ORD98','P0037',2,174975),
-('ORD98','P0083',1,108142),
-('ORD98','P0047',1,133150),
-('ORD99','P0164',2,115403),
-('ORD99','P0156',1,133313),
-('ORD99','P0006',4,120666),
-('ORD99','P0098',5,149099),
-('ORD99','P0160',5,192509),
-('ORD100','P0034',5,55209),
-('ORD100','P0068',1,183175),
-('ORD100','P0079',2,169819),
-('ORD100','P0175',1,89985),
-('ORD101','P0036',5,146594),
-('ORD101','P0026',1,163783),
-('ORD101','P0158',5,158123),
-('ORD101','P0083',3,60785),
-('ORD101','P0134',1,135067),
-('ORD102','P0153',2,89627),
-('ORD102','P0130',4,78429),
-('ORD102','P0029',4,175488),
-('ORD103','P0118',1,53609),
-('ORD103','P0162',1,65476),
-('ORD103','P0160',3,118162),
-('ORD104','P0164',4,195182),
-('ORD104','P0136',2,56139),
-('ORD104','P0055',4,152753),
-('ORD104','P0123',4,146480),
-('ORD105','P0173',5,196078),
-('ORD105','P0101',2,93665),
-('ORD105','P0128',1,160783),
-('ORD106','P0166',4,101562),
-('ORD106','P0093',1,153079),
-('ORD106','P0046',2,123791),
-('ORD106','P0045',4,126532),
-('ORD107','P0042',1,114247),
-('ORD107','P0165',4,120368),
-('ORD107','P0089',4,107718),
-('ORD108','P0092',1,96662),
-('ORD108','P0178',3,87968),
-('ORD108','P0061',2,147334),
-('ORD109','P0075',3,62038),
-('ORD109','P0020',3,60070),
-('ORD109','P0137',4,63726),
-('ORD109','P0033',4,161675),
-('ORD110','P0087',1,170386),
-('ORD110','P0118',2,126459),
-('ORD110','P0082',3,50817),
-('ORD110','P0048',1,176512),
-('ORD110','P0147',5,190219),
-('ORD111','P0148',4,178708),
-('ORD111','P0162',3,129716),
-('ORD111','P0092',3,113479),
-('ORD111','P0165',4,187558),
-('ORD112','P0143',2,117773),
-('ORD112','P0081',2,96309),
-('ORD112','P0166',2,87462),
-('ORD112','P0064',2,112210),
-('ORD112','P0025',5,134817),
-('ORD113','P0087',3,58573),
-('ORD113','P0056',4,140648),
-('ORD113','P0168',4,80031),
-('ORD113','P0017',5,181655),
-('ORD113','P0005',3,121637),
-('ORD114','P0148',4,175296),
-('ORD114','P0066',2,196644),
-('ORD114','P0065',3,161542),
-('ORD114','P0069',3,108976),
-('ORD115','P0146',2,80982),
-('ORD115','P0091',4,131068),
-('ORD115','P0139',4,171701),
-('ORD115','P0120',1,87525),
-('ORD115','P0140',1,55024),
-('ORD115','P0156',1,154663),
-('ORD115','P0160',1,96422),
-('ORD116','P0028',1,81088),
-('ORD116','P0094',1,101760),
-('ORD116','P0022',1,104351),
-('ORD116','P0046',1,137854),
-('ORD116','P0061',2,170510),
-('ORD116','P0167',2,64306),
--- ORD117
-('ORD117','P0011',1,150000),
--- ORD118
-('ORD118','P0010',2,1200000),
-('ORD118','P0009',1,80000),
--- ORD119
-('ORD119','P0001',1,100000),
--- ORD120
-('ORD120','P0003',2,120000),
-('ORD120','P0012',1,120000),
--- ORD121
-('ORD121','P0006',1,60000),
--- ORD122
-('ORD122','P0014',2,80000),
-('ORD122','P0015',1,20000),
--- ORD123
-('ORD123','P0016',1,100000),
--- ORD124
-('ORD124','P0017',2,700000),
-('ORD124','P0018',1,500000),
--- ORD125
-('ORD125','P0004',1,15000),
--- ORD126
-('ORD126','P0008',2,50000),
-('ORD126','P0009',1,80000),
--- ORD127
-('ORD127','P0011',1,150000),
--- ORD128
-('ORD128','P0012',2,120000),
-('ORD128','P0013',1,150000),
--- ORD129
-('ORD129','P0002',1,300000),
--- ORD130
-('ORD130','P0005',2,15000),
-('ORD130','P0006',1,60000);
 -- Bật lại kiểm tra khóa ngoại
 -- 1. Thêm cột full_name vào bảng users
-SET SQL_SAFE_UPDATES = 0;
+UPDATE product_variants v
+SET stock_quantity = (
+    IFNULL((SELECT SUM(quantity) FROM stock_in_details WHERE variant_id = v.variant_id), 0)
+    - 
+    IFNULL((SELECT SUM(quantity) FROM order_details WHERE variant_id = v.variant_id), 0)
+);
+
 
 
 -- 2. Cập nhật dữ liệu tên cho tài khoản OS01 (để đăng nhập không bị lỗi hiển thị)

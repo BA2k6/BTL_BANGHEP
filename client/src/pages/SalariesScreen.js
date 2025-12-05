@@ -4,7 +4,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { DollarSign, Search, Plus, Edit, Trash2 } from 'lucide-react';
 // Import API thật để lấy dữ liệu từ Server
 // Giả định hàm getSalaries tồn tại trong api.js
-import { getSalaries } from '../services/api'; 
+import { getSalaries, calculateSalaries, paySalary, patchSalary, deleteSalary } from '../services/api'; 
+import api from '../services/api';
+import SalaryEditModal from '../components/SalaryEditModal';
 // Import các hằng số và hàm tiện ích
 import { ROLES } from '../utils/constants';
 import { formatCurrency, normalizeSearchableValue } from '../utils/helpers';
@@ -14,6 +16,8 @@ export const SalariesScreen = ({ userRoleName }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState(''); 
+    const [editingSalary, setEditingSalary] = useState(null);
+    const [showEditModal, setShowEditModal] = useState(false);
     
     // Chỉ Owner mới có quyền chỉnh sửa/tạo bảng lương
     const canEdit = userRoleName === ROLES.OWNER.name;
@@ -37,6 +41,19 @@ export const SalariesScreen = ({ userRoleName }) => {
         };
         fetchSalaries();
     }, []); 
+
+    const refresh = async () => {
+        setIsLoading(true);
+        try {
+            const data = await getSalaries();
+            setSalaries(data);
+        } catch (err) {
+            setError(err.message || 'Không thể tải dữ liệu bảng lương từ máy chủ.');
+            console.error(err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     // --- LOGIC TÌM KIẾM TOÀN DIỆN TRÊN CLIENT ---
     const filteredSalaries = useMemo(() => {
@@ -79,8 +96,22 @@ export const SalariesScreen = ({ userRoleName }) => {
                         />
                     </div>
                     {canEdit && (
-                        <button 
-                            
+                        <button
+                            onClick={async () => {
+                                const month = prompt('Nhập tháng theo định dạng YYYY-MM, ví dụ 2025-12');
+                                if (!month) return;
+                                try {
+                                    setIsLoading(true);
+                                    await calculateSalaries(month);
+                                    await refresh();
+                                    alert('Tính lương thành công.');
+                                } catch (err) {
+                                    console.error(err);
+                                    alert(err.message || 'Lỗi khi tính lương.');
+                                } finally {
+                                    setIsLoading(false);
+                                }
+                            }}
                             className="flex items-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-200 w-full sm:w-auto"
                         >
                             <Plus className="w-5 h-5 mr-1" /> Tính lương mới
@@ -100,6 +131,7 @@ export const SalariesScreen = ({ userRoleName }) => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thưởng</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Khấu trừ</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thực nhận</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng thái</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
                             </tr>
                         </thead>
@@ -115,19 +147,67 @@ export const SalariesScreen = ({ userRoleName }) => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">{formatCurrency(s.bonus)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">{formatCurrency(s.deductions)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-indigo-600">{formatCurrency(s.net_salary)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <span className={`px-2 py-1 rounded text-xs font-semibold ${s.paid_status === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                            {s.paid_status === 'Paid' ? '✓ Đã trả' : '⏳ Chưa trả'}
+                                        </span>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         {canEdit && (
                                             <>
-                                                <button 
-                                                    title="Sửa chi tiết" 
-                                                    onClick={() => alert(`[API CALL] Mở form sửa chi tiết bảng lương #${s.salary_id}`)}
+                                                <button
+                                                    title="Đánh dấu đã trả"
+                                                    onClick={async () => {
+                                                        if (!confirm(`Đánh dấu lương #${s.salary_id} là đã trả?`)) return;
+                                                        try {
+                                                            setIsLoading(true);
+                                                            if (typeof paySalary === 'function') {
+                                                                await paySalary(s.salary_id);
+                                                            } else {
+                                                                // fallback: call API directly
+                                                                await api.patch(`/salaries/${encodeURIComponent(s.salary_id)}/pay`);
+                                                            }
+                                                            await refresh();
+                                                            alert('Đã cập nhật trạng thái trả lương.');
+                                                        } catch (err) {
+                                                            console.error(err);
+                                                            alert((err && err.message) || 'Lỗi khi cập nhật trạng thái trả lương.');
+                                                        } finally {
+                                                            setIsLoading(false);
+                                                        }
+                                                    }}
+                                                    className="text-green-600 hover:text-green-900 mr-3 p-1 rounded-full hover:bg-green-100 transition"
+                                                >
+                                                    <DollarSign className="w-5 h-5" />
+                                                </button>
+                                                <button
+                                                    title="Sửa chi tiết"
+                                                    onClick={() => { setEditingSalary(s); setShowEditModal(true); }}
                                                     className="text-indigo-600 hover:text-indigo-900 mr-3 p-1 rounded-full hover:bg-indigo-100 transition"
                                                 >
                                                     <Edit className="w-5 h-5" />
                                                 </button>
-                                                <button 
-                                                    title="Xóa/Hủy" 
-                                                    onClick={() => alert(`[API CALL] Xác nhận xóa bảng lương #${s.salary_id}`)}
+                                                <button
+                                                    title="Xóa/Hủy"
+                                                    onClick={async () => {
+                                                        if (!confirm(`Xác nhận xóa bảng lương #${s.salary_id}?`)) return;
+                                                        try {
+                                                            setIsLoading(true);
+                                                            if (typeof deleteSalary === 'function') {
+                                                                await deleteSalary(s.salary_id);
+                                                            } else {
+                                                                // fallback: call API directly
+                                                                await api.delete(`/salaries/${encodeURIComponent(s.salary_id)}`);
+                                                            }
+                                                            await refresh();
+                                                            alert('Đã xóa bảng lương.');
+                                                        } catch (err) {
+                                                            console.error(err);
+                                                            alert((err && err.message) || 'Lỗi khi xóa bảng lương.');
+                                                        } finally {
+                                                            setIsLoading(false);
+                                                        }
+                                                    }}
                                                     className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-100 transition"
                                                 >
                                                     <Trash2 className="w-5 h-5" />
@@ -141,6 +221,15 @@ export const SalariesScreen = ({ userRoleName }) => {
                     </table>
                     {filteredSalaries.length === 0 && <p className="text-center py-8 text-gray-500">Không tìm thấy bảng lương nào.</p>}
                 </div>
+                {/* Edit modal */}
+                {showEditModal && (
+                    <SalaryEditModal
+                        visible={showEditModal}
+                        onClose={() => { setShowEditModal(false); setEditingSalary(null); }}
+                        salary={editingSalary}
+                        onSaved={async () => { await refresh(); }}
+                    />
+                )}
             </div>
         </div>
     );

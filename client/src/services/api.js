@@ -221,14 +221,6 @@ export const getOrders = async () => {
     }
 };
 
-export const getSalaries = async () => {
-    try {
-        const response = await api.get('/salaries');
-        return response.data;
-    } catch (error) {
-        throw error.response?.data || { message: 'Lỗi tải bảng lương.' };
-    }
-};
 
 export const getStockInReceipts = async () => {
     try {
@@ -308,5 +300,44 @@ export const updateProfile = async (data) => {
     const response = await api.put('/users/profile', data);
     return response.data;
 };
+
+export const getSalaries = async () => {
+    const response = await api.get('/salaries');
+    if (response.status !== 200) throw response.data || { message: 'Lỗi tải bảng lương.' };
+    return response.data;
+};
+
+export const getSalary = async (salaryId) => {
+    const response = await api.get(`/salaries/${encodeURIComponent(salaryId)}`);
+    if (response.status === 404) throw response.data || { message: 'Không tìm thấy bảng lương.' };
+    if (response.status !== 200) throw response.data || { message: 'Lỗi khi tải bảng lương.' };
+    return response.data;
+};
+
+export const deleteSalary = async (salaryId) => {
+    const response = await api.delete(`/salaries/${encodeURIComponent(salaryId)}`);
+    if (response.status !== 200) throw response.data || { message: 'Lỗi khi xóa bảng lương.' };
+    return response.data;
+};
+
+export const calculateSalaries = async (month) => {
+    // month: 'YYYY-MM'
+    const response = await api.post('/salaries/calculate', { month });
+    if (response.status !== 200) throw response.data || { message: 'Lỗi khi tính lương.' };
+    return response.data;
+};
+
+export const paySalary = async (salaryId) => {
+    const response = await api.patch(`/salaries/${encodeURIComponent(salaryId)}/pay`);
+    if (response.status !== 200) throw response.data || { message: 'Lỗi khi cập nhật trạng thái trả lương.' };
+    return response.data;
+};
+
+export const patchSalary = async (salaryId, data) => {
+    const response = await api.patch(`/salaries/${encodeURIComponent(salaryId)}`, data);
+    if (response.status !== 200) throw response.data || { message: 'Lỗi khi cập nhật bảng lương.' };
+    return response.data;
+};
+
 
 export default api;

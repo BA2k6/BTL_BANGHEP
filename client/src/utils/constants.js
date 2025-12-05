@@ -32,7 +32,9 @@ export const roleToRoutes = {
         { path: '/customers', name: 'Khách hàng', icon: Users },
     ],
     [ROLES.WAREHOUSE.name]: [
+        { path: '/customers', name: 'Khách hàng', icon: Users },
         { path: '/products', name: 'Sản phẩm', icon: Package },
+
         { path: '/stockin', name: 'Nhập kho', icon: Truck },
     ],
     [ROLES.SHIPPER.name]: [

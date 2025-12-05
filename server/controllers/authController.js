@@ -76,7 +76,7 @@ const authController = {
     // ============================================================
     // 2. ĐĂNG KÝ (REGISTER) - Mã hóa mật khẩu
     // ============================================================
-    register: async (req, res) => {
+register: async (req, res) => {
         const { fullName, phone, password } = req.body;
 
         if (!fullName || !phone || !password) {
@@ -85,34 +85,75 @@ const authController = {
 
         let connection;
         try {
-            // 🟢 Mã hóa trước khi lưu
+            // 🟢 Mã hóa mật khẩu
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(password, salt);
 
             connection = await db.getConnection();
             await connection.beginTransaction();
 
+            // 1. Kiểm tra trùng SĐT (Vẫn check theo username là SĐT)
             const [existing] = await connection.query("SELECT user_id FROM users WHERE username = ?", [phone]);
             if (existing.length > 0) {
                 await connection.release();
                 return res.status(409).json({ message: 'Số điện thoại này đã được đăng ký.' });
             }
 
+            // ==================================================================
+            // 🟡 [PHẦN 1] TẠO USER ID TỰ TĂNG: US1, US2...
+            // ==================================================================
+            const [userRows] = await connection.query(
+                "SELECT user_id FROM users ORDER BY LENGTH(user_id) DESC, user_id DESC LIMIT 1"
+            );
+
+            let newUserId = 'US1'; // Mặc định nếu bảng user trống
+
+            if (userRows.length > 0) {
+                const lastUserId = userRows[0].user_id; // Ví dụ: US15
+                // Cắt 2 ký tự đầu 'US' để lấy số
+                const userNum = parseInt(lastUserId.substring(2)); 
+                newUserId = `US${userNum + 1}`;
+            }
+
+            // ==================================================================
+            // 🟡 [PHẦN 2] TẠO CUSTOMER ID TỰ TĂNG: CUS1, CUS2...
+            // ==================================================================
+            const [cusRows] = await connection.query(
+                "SELECT customer_id FROM customers ORDER BY LENGTH(customer_id) DESC, customer_id DESC LIMIT 1"
+            );
+
+            let newCustomerId = 'CUS1'; // Mặc định nếu bảng customer trống
+
+            if (cusRows.length > 0) {
+                const lastCusId = cusRows[0].customer_id; // Ví dụ: CUS99
+                // Cắt 3 ký tự đầu 'CUS' để lấy số
+                const cusNum = parseInt(lastCusId.substring(3)); 
+                newCustomerId = `CUS${cusNum + 1}`;
+            }
+
+            // ==================================================================
+            // 🟢 INSERT VÀO DB
+            // ==================================================================
+
+            // 3. Insert User
+            // - user_id: US1, US2... (Vừa tạo ở trên)
+            // - username: phone (Để đăng nhập)
             const insertUserQuery = `
                 INSERT INTO users 
                 (user_id, username, password_hash, role_id, status, must_change_password, token_version)
                 VALUES (?, ?, ?, 2, 'Active', FALSE, 0)
             `;
-            // Lưu hashedPassword
-            await connection.query(insertUserQuery, [phone, phone, hashedPassword]);
+            await connection.query(insertUserQuery, [newUserId, phone, hashedPassword]);
 
-            const newCustomerId = `CUS_${phone}`; 
+            // 4. Insert Customer
+            // - customer_id: CUS1, CUS2...
+            // - user_id: US1, US2... (Liên kết với bảng users)
             const insertCustomerQuery = `
                 INSERT INTO customers 
                 (customer_id, user_id, full_name, phone)
                 VALUES (?, ?, ?, ?)
             `;
-            await connection.query(insertCustomerQuery, [newCustomerId, phone, fullName, phone]);
+            await connection.query(insertCustomerQuery, [newCustomerId, newUserId, fullName, phone]);
 
             await connection.commit();
             connection.release();

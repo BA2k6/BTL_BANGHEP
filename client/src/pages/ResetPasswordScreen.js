@@ -48,7 +48,7 @@ export const ResetPasswordScreen = ({ currentUser, setPath }) => {
 
     const validateStrongPassword = (pass) => {
         // Ít nhất 8 ký tự, 1 chữ hoa, 1 số (Tùy chỉnh theo nhu cầu Aura Store)
-        const strongRegex = new RegExp("^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.{8,})");
+        const strongRegex = new RegExp("(?=.{6,})");
         return strongRegex.test(pass);
     };
 
@@ -57,7 +57,7 @@ export const ResetPasswordScreen = ({ currentUser, setPath }) => {
         setError('');
         
         if (!validateStrongPassword(password)) {
-            return setError('Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số.');
+            return setError('Mật khẩu phải có ít nhất 6 ký tự.');
         }
         if (password !== confirmPassword) {
             return setError('Mật khẩu xác nhận không khớp.');

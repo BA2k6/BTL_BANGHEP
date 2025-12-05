@@ -196,6 +196,7 @@ export const UsersScreen = ({ currentUser, refreshKey }) => {
     // Logic Lọc (Chạy mỗi khi users thay đổi hoặc nhập search)
     useEffect(() => {
         let result = users;
+        result = result.filter(u => (u.roleName || '').toLowerCase() !== 'owner');
         const myRole = (currentUser?.roleName || '').toLowerCase();
         
         if (['sales', 'online sales'].includes(myRole)) {

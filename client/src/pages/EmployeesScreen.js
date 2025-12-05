@@ -1,7 +1,6 @@
-//C:\Users\Admin\Downloads\DUANWEB(1)\client\src\pages\EmployeesScreen.js
 import React, { useState, useEffect } from 'react';
 import api from '../services/api'; 
-import { Plus, Search, User, Edit, Trash2, X, Shield, Truck, ShoppingBag, Headset, CheckCircle, AlertCircle } from 'lucide-react'; 
+import { Plus, Search, User, Edit, Trash2, X, Shield, Truck, ShoppingBag, Headset, CheckCircle, AlertCircle, RefreshCcw, Loader } from 'lucide-react'; 
 
 // ------------------------------------------------------------------------------------------------
 // --- HELPER FUNCTIONS ---
@@ -70,6 +69,7 @@ export const EmployeesScreen = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [loading, setLoading] = useState(false); // [MỚI] Thêm state loading để hiển thị khi cần
 
     const initialFormState = {
         roleName: 'Sales',
@@ -85,15 +85,32 @@ export const EmployeesScreen = () => {
 
     const [formData, setFormData] = useState(initialFormState);
 
-    // 1. Tải danh sách nhân viên
-    const fetchEmployees = async () => {
+    // 1. Tải danh sách nhân viên [ĐÃ SỬA: Thêm tham số showLoading]
+    const fetchEmployees = async (showLoading = false) => {
+        if (showLoading) setLoading(true);
         try {
             const res = await api.get('/employees'); 
             setEmployees(res.data);
-        } catch (err) { console.error("Lỗi tải danh sách:", err); }
+        } catch (err) { 
+            console.error("Lỗi tải danh sách:", err); 
+        } finally {
+            if (showLoading) setLoading(false);
+        }
     };
 
-    useEffect(() => { fetchEmployees(); }, []);
+    // [MỚI] Logic Auto Refresh: Gọi mỗi 5 giây
+    useEffect(() => { 
+        // Gọi ngay lần đầu (hiện loading)
+        fetchEmployees(true);
+
+        // Thiết lập bộ đếm 5 giây gọi lại 1 lần (không hiện loading để tránh nháy)
+        const intervalId = setInterval(() => {
+            fetchEmployees(false);
+        }, 5000);
+
+        // Dọn dẹp khi thoát trang
+        return () => clearInterval(intervalId);
+    }, []);
 
     // 2. Tự động sinh ID
     useEffect(() => {
@@ -127,8 +144,7 @@ export const EmployeesScreen = () => {
         setIsModalOpen(true);
     }
 
-    // 5. Xử lý Submit (ĐÃ THÊM LOGIC CHECK SỐ ĐIỆN THOẠI)
-  // 5. Xử lý Submit (ĐÃ ĐỒNG BỘ TÊN TRƯỜNG VỚI BACKEND)
+    // 5. Xử lý Submit
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -147,23 +163,19 @@ export const EmployeesScreen = () => {
             }
         }
 
-        // --- CHUẨN BỊ PAYLOAD (QUAN TRỌNG: Đã sửa tên Key cho khớp Controller) ---
+        // --- CHUẨN BỊ PAYLOAD ---
         const payload = {
-            // Controller đọc: const { employeeId, fullName, roleName ... } = req.body;
-            // Nên Frontend phải gửi đúng tên như vậy (camelCase), không dùng snake_case
-            
-            employeeId: formData.employeeId,     // Sửa: employee_id -> employeeId
-            fullName: formData.fullName,         // Sửa: full_name -> fullName
-            roleName: formData.roleName,         // Sửa: department -> roleName (Quan trọng nhất để fix lỗi 400)
+            employeeId: formData.employeeId,
+            fullName: formData.fullName,
+            roleName: formData.roleName,
             email: formData.email,
             phone: formData.phone,
             address: formData.address,
-            baseSalary: Number(formData.baseSalary), // Sửa: base_salary -> baseSalary
+            baseSalary: Number(formData.baseSalary),
             username: formData.username,
             password: formData.password
         };
 
-        // Nếu đang sửa mà không nhập pass mới thì bỏ trường password đi
         if (isEditing && !payload.password) {
             delete payload.password;
         }
@@ -172,8 +184,6 @@ export const EmployeesScreen = () => {
 
         try {
             if (isEditing) {
-                // API Update cũng dùng model update(employeeId, data) -> data.fullName
-                // Nên payload này cũng đúng cho cả Update
                 await api.put(`/employees/${formData.employeeId}`, payload);
                 alert("Cập nhật thông tin thành công!");
             } else {
@@ -181,7 +191,7 @@ export const EmployeesScreen = () => {
                 alert(`Thêm nhân viên và tạo tài khoản ${formData.username} thành công!`);
             }
             setIsModalOpen(false);
-            fetchEmployees(); 
+            fetchEmployees(true); // Gọi lại ngay để cập nhật UI
         } catch (error) {
             console.error("Chi tiết lỗi từ Server:", error.response);
             
@@ -201,19 +211,19 @@ export const EmployeesScreen = () => {
     };
 
     // 6. Xử lý Xóa
-    const handleDelete = async (employeeId, username) => {
+   /* const handleDelete = async (employeeId, username) => {
         const confirmMsg = `CẢNH BÁO: Bạn có chắc chắn muốn xóa nhân viên ${employeeId}?\n\nHành động này sẽ XÓA LUÔN TÀI KHOẢN đăng nhập (${username}) khỏi hệ thống.`;
         if (window.confirm(confirmMsg)) {
             try {
                 await api.delete(`/employees/${employeeId}`);
                 alert("Đã xóa nhân viên và tài khoản liên quan.");
-                fetchEmployees();
+                fetchEmployees(true); // Gọi lại ngay
             } catch (error) {
                 alert("Lỗi khi xóa: " + (error.response?.data?.message || error.message));
             }
         }
     };
-    
+    */
     // 7. Logic tìm kiếm
     const filteredEmployees = employees.filter(emp => {
         const lowerSearch = searchTerm.toLowerCase();
@@ -228,13 +238,29 @@ export const EmployeesScreen = () => {
         <div className="p-6 bg-gray-50 min-h-screen">
             {/* HEADER */}
             <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-800">Quản lý Nhân sự</h1>
-                <button 
-                    onClick={handleAddNew}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-md transition-colors"
-                >
-                    <Plus size={20} /> Thêm Nhân viên
-                </button>
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-800">Quản lý Nhân sự</h1>
+                    {/* [MỚI] Thêm dòng thông báo nhỏ */}
+                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                        <RefreshCcw size={10} className="animate-spin-slow"/> Tự động cập nhật mỗi 5s
+                    </p>
+                </div>
+                <div className="flex gap-2">
+                     {/* [MỚI] Nút làm mới thủ công */}
+                    <button 
+                        onClick={() => fetchEmployees(true)}
+                        className="bg-white border border-gray-200 text-gray-600 px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50 shadow-sm transition-colors"
+                        title="Làm mới danh sách ngay lập tức"
+                    >
+                         <RefreshCcw size={18} className={loading ? "animate-spin" : ""} />
+                    </button>
+                    <button 
+                        onClick={handleAddNew}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-md transition-colors"
+                    >
+                        <Plus size={20} /> Thêm Nhân viên
+                    </button>
+                </div>
             </div>
 
             {/* SEARCH */}
@@ -252,66 +278,73 @@ export const EmployeesScreen = () => {
             </div>
 
             {/* TABLE */}
-            <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
-                <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-100 text-gray-700">
-                        <tr>
-                            <th className="p-4 border-b">Mã NV</th>
-                            <th className="p-4 border-b">Họ tên</th>
-                            <th className="p-4 border-b">Bộ phận</th>
-                            <th className="p-4 border-b">Tài khoản & Trạng thái</th>
-                            <th className="p-4 border-b">Liên hệ & Lương</th>
-                            <th className="p-4 border-b text-center">Hành động</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredEmployees.map(emp => (
-                            <tr key={emp.employee_id} className="border-b hover:bg-blue-50 transition-colors">
-                                <td className="p-4 font-bold text-blue-600">{emp.employee_id}</td>
-                                <td className="p-4 font-medium">{emp.full_name}</td>
-                                <td className="p-4">
-                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${getRoleBadgeColor(emp.department)}`}>
-                                        {getRoleIcon(emp.department)} {emp.department}
-                                    </span>
-                                </td>
-                                <td className="p-4 text-sm">
-                                    <div className="text-gray-800 font-mono flex items-center gap-1 font-semibold">{emp.username}</div>
-                                    <div className="mt-1">{getStatusBadge(emp.status)}</div>
-                                </td>
-                                <td className="p-4 text-sm">
-                                    <div className="text-gray-800">{emp.email}</div>
-                                    <div className="text-gray-500">{emp.phone}</div>
-                                    <div className="text-xs text-green-600 font-medium mt-1">Lương: {Number(emp.base_salary).toLocaleString()} VNĐ</div>
-                                </td>
-                                <td className="p-4 text-center">
-                                    <div className="flex justify-center gap-2">
-                                        <button 
-                                            onClick={() => handleEdit(emp)}
-                                            className="p-2 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition"
-                                            title="Sửa thông tin"
-                                        >
-                                            <Edit size={16} />
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDelete(emp.employee_id, emp.username)}
-                                            className="p-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
-                                            title="Xóa nhân viên"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                        {filteredEmployees.length === 0 && (
+            <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200 min-h-[200px]">
+                {loading && employees.length === 0 ? (
+                     <div className="p-10 text-center text-gray-500 flex flex-col items-center justify-center h-48">
+                        <Loader className="w-8 h-8 animate-spin text-blue-500 mb-2" />
+                        <p>Đang tải dữ liệu...</p>
+                    </div>
+                ) : (
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-100 text-gray-700">
                             <tr>
-                                <td colSpan="6" className="p-6 text-center text-gray-500">
-                                    {employees.length === 0 ? 'Chưa có dữ liệu nhân viên.' : 'Không tìm thấy kết quả phù hợp.'}
-                                </td>
+                                <th className="p-4 border-b">Mã NV</th>
+                                <th className="p-4 border-b">Họ tên</th>
+                                <th className="p-4 border-b">Bộ phận</th>
+                                <th className="p-4 border-b">Tài khoản & Trạng thái</th>
+                                <th className="p-4 border-b">Liên hệ & Lương</th>
+                                <th className="p-4 border-b text-center">Hành động</th>
                             </tr>
-                        )}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {filteredEmployees.map(emp => (
+                                <tr key={emp.employee_id} className="border-b hover:bg-blue-50 transition-colors">
+                                    <td className="p-4 font-bold text-blue-600">{emp.employee_id}</td>
+                                    <td className="p-4 font-medium">{emp.full_name}</td>
+                                    <td className="p-4">
+                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${getRoleBadgeColor(emp.department)}`}>
+                                            {getRoleIcon(emp.department)} {emp.department}
+                                        </span>
+                                    </td>
+                                    <td className="p-4 text-sm">
+                                        <div className="text-gray-800 font-mono flex items-center gap-1 font-semibold">{emp.username}</div>
+                                        <div className="mt-1">{getStatusBadge(emp.status)}</div>
+                                    </td>
+                                    <td className="p-4 text-sm">
+                                        <div className="text-gray-800">{emp.email}</div>
+                                        <div className="text-gray-500">{emp.phone}</div>
+                                        <div className="text-xs text-green-600 font-medium mt-1">Lương: {Number(emp.base_salary).toLocaleString()} VNĐ</div>
+                                    </td>
+                                    <td className="p-4 text-center">
+                                        <div className="flex justify-center gap-2">
+                                            <button 
+                                                onClick={() => handleEdit(emp)}
+                                                className="p-2 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition"
+                                                title="Sửa thông tin"
+                                            >
+                                                <Edit size={16} />
+                                            </button>
+                                           { /* <button 
+                                                onClick={() => handleDelete(emp.employee_id, emp.username)}
+                                                className="p-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
+                                                title="Xóa nhân viên"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button> */}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            {filteredEmployees.length === 0 && (
+                                <tr>
+                                    <td colSpan="6" className="p-6 text-center text-gray-500">
+                                        {employees.length === 0 ? 'Chưa có dữ liệu nhân viên.' : 'Không tìm thấy kết quả phù hợp.'}
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                )}
             </div>
 
             {/* MODAL */}
@@ -401,7 +434,6 @@ export const EmployeesScreen = () => {
                                         className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
                                         value={formData.phone}
                                         onChange={e => {
-                                            // Chỉ cho phép nhập số
                                             const val = e.target.value;
                                             if (!isNaN(val)) setFormData({...formData, phone: val});
                                         }}

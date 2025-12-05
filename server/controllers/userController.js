@@ -156,11 +156,6 @@ const userController = {
     },
 
     // ============================================================
-    // 6. CẬP NHẬT HỒ SƠ CÁ NHÂN
-    // ============================================================
-// ... (các hàm khác giữ nguyên)
-
-    // ============================================================
     // 6. CẬP NHẬT HỒ SƠ CÁ NHÂN [ĐÃ SỬA LỖI ROLE]
     // ============================================================
     updateUserProfile: async (req, res) => {
@@ -171,7 +166,7 @@ const userController = {
             
             console.log(`>>> Update Profile request: User [${userId}] - Role [${roleName}]`);
 
-            const { full_name, phone, address, date_of_birth } = req.body;
+            const { full_name, phone, address, date_of_birth, email } = req.body;
 
             // Xử lý ngày tháng: Nếu rỗng gửi null để tránh lỗi DB
             const dobValue = date_of_birth ? date_of_birth : null;
@@ -180,7 +175,8 @@ const userController = {
                 full_name, 
                 phone, 
                 address, 
-                date_of_birth: dobValue 
+                date_of_birth: dobValue,
+                email
             };
 
             let result;
@@ -224,7 +220,6 @@ const userController = {
             res.status(500).json({ message: 'Lỗi server khi cập nhật hồ sơ.' });
         }
     },
-// ...
 };
 
 module.exports = userController;

@@ -17,6 +17,6 @@ router.put('/:id', employeeController.updateEmployee);
 
 // 4. Xóa nhân viên
 // DELETE http://localhost:5000/api/employees/:id
-router.delete('/:id', employeeController.deleteEmployee);
+// router.delete('/:id', employeeController.deleteEmployee);
 
 module.exports = router;
