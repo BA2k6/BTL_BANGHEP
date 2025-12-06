@@ -3,7 +3,7 @@ import axios from 'axios';
 
 // [DEBUG] Nếu bạn thấy dòng này trong Console (F12) nghĩa là file MỚI đã chạy
 console.log("%c[API] Đã cập nhật phiên bản: FIX LỖI ĐĂNG XUẤT", "background: green; color: white; padding: 4px; font-weight: bold");
-
+console.log("%c[API] Đã cập nhật phiên bản: THÊM UPDATE STATUS SẢN PHẨM", "background: purple; color: white; padding: 4px; font-weight: bold");
 const api = axios.create({
     baseURL: 'http://localhost:5001/api', 
     headers: {
@@ -231,19 +231,19 @@ export const getDashboardCurrentStats = async () => {
     }
 };
 
+// ============================================================
+// CÁC HÀM GỌI API (SẢN PHẨM)
+// ============================================================
 
-// [ĐÃ SỬA]: Thêm tham số categoryId vào hàm
 export const getProducts = async (categoryId, searchTerm) => {
     try {
         const params = {};
         if (categoryId && categoryId !== 'all') {
             params.category_id = categoryId;
         }
-        // GỬI THAM SỐ TÌM KIẾM
         if (searchTerm) {
             params.search_term = searchTerm;
         }
-
         const response = await api.get('/products', { params });
         return response.data;
     } catch (error) {
@@ -268,6 +268,18 @@ export const updateProduct = async (id, product) => {
     if (response.status !== 200) throw response.data || { message: 'Lỗi khi cập nhật sản phẩm.' };
     return response.data;
 };
+
+// --- [MỚI] HÀM NÀY ĐƯỢC THÊM VÀO ĐỂ SỬA LỖI NÚT TRẠNG THÁI ---
+export const updateProductStatus = async (id, isActive) => {
+    try {
+        // isActive: true/false
+        const response = await api.patch(`/products/${id}/status`, { is_active: isActive });
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi cập nhật trạng thái sản phẩm.' };
+    }
+};
+// -------------------------------------------------------------
 
 export const deleteProduct = async (id) => {
     const response = await api.delete(`/products/${id}`);
