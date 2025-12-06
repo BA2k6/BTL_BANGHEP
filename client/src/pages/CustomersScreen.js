@@ -4,8 +4,8 @@ import { getCustomers } from '../services/api';
 import { ROLES } from '../utils/constants';
 import { normalizeSearchableValue } from '../utils/helpers';
 
-// [QUAN TRỌNG] Đã sửa về Port 5000 cho đúng với Server của bạn
-const API_BASE_URL = "http://localhost:5000/api/customers";
+// [QUAN TRỌNG] Đã sửa về Port 5001 cho đúng với Server của bạn
+const API_BASE_URL = "http://localhost:5001/api/customers";
 
 export const CustomersScreen = ({ userRoleName }) => {
     // --- STATE DANH SÁCH KHÁCH HÀNG ---

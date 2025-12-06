@@ -5,7 +5,7 @@ import axios from 'axios';
 console.log("%c[API] Đã cập nhật phiên bản: FIX LỖI ĐĂNG XUẤT", "background: green; color: white; padding: 4px; font-weight: bold");
 
 const api = axios.create({
-    baseURL: 'http://localhost:5000/api', 
+    baseURL: 'http://localhost:5001/api', 
     headers: {
         'Content-Type': 'application/json',
     },
