@@ -47,7 +47,7 @@ export const ResetPasswordScreen = ({ currentUser, setPath }) => {
     const [showConfirm, setShowConfirm] = useState(false);
 
     const validateStrongPassword = (pass) => {
-        // Ít nhất 8 ký tự, 1 chữ hoa, 1 số (Tùy chỉnh theo nhu cầu Aura Store)
+        // Ít nhất 6 ký tự
         const strongRegex = new RegExp("(?=.{6,})");
         return strongRegex.test(pass);
     };
@@ -170,7 +170,7 @@ export const ResetPasswordScreen = ({ currentUser, setPath }) => {
                                     type={showPass ? "text" : "password"} 
                                     value={password} 
                                     onChange={(e) => setPassword(e.target.value)} 
-                                    placeholder="Mật khẩu mới (Có chữ hoa, chữ thường và số)" 
+                                    placeholder="Mật khẩu mới (Có ít nhất 6 kí tự)" 
                                     showToggle={true} 
                                     onToggle={() => setShowPass(!showPass)} 
                                     isShow={showPass} 
