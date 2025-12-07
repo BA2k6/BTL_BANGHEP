@@ -225,53 +225,96 @@ SET stock_quantity = (
             AND o.status <> 'Đã Hủy'), 0) -- Chỉ trừ hàng nếu đơn chưa hủy
 );
 
+
+-- 1. Cập nhật giá vốn (cost_price) trong bảng products 
+-- dựa trên TẤT CẢ lịch sử nhập hàng (Bình quân gia quyền)
+UPDATE products p
+INNER JOIN (
+    SELECT 
+        v.product_id,
+        -- Công thức: Tổng tiền nhập / Tổng số lượng nhập
+        SUM(sid.quantity * sid.cost_price) / SUM(sid.quantity) as gia_von_trung_binh
+    FROM stock_in_details sid
+    JOIN product_variants v ON sid.variant_id = v.variant_id
+    GROUP BY v.product_id
+) AS TinhToan ON p.product_id = TinhToan.product_id
+SET p.cost_price = TinhToan.gia_von_trung_binh;
+
+-- 2. Cập nhật lại số lượng tồn kho chuẩn xác (Tồn = Nhập - Xuất)
+-- Để đảm bảo không bị lệch số lượng
+UPDATE product_variants v
+SET stock_quantity = (
+    IFNULL((SELECT SUM(quantity) FROM stock_in_details WHERE variant_id = v.variant_id), 0)
+    - 
+    IFNULL((SELECT SUM(od.quantity) 
+            FROM order_details od
+            JOIN orders o ON od.order_id = o.order_id
+            WHERE od.variant_id = v.variant_id 
+            AND o.status <> 'Đã Hủy'), 0)
+);
+
+USE `store_management_db`;
+
+DROP TRIGGER IF EXISTS `after_stock_in_update_price`;
+
+DELIMITER $$
+
+CREATE TRIGGER `after_stock_in_update_price`
+AFTER INSERT ON `stock_in_details`
+FOR EACH ROW
+BEGIN
+    DECLARE _product_id VARCHAR(20);
+    DECLARE _old_stock INT DEFAULT 0;
+    DECLARE _current_cost DECIMAL(18,2) DEFAULT 0;
+    DECLARE _new_avg_cost DECIMAL(18,2);
+    DECLARE _total_qty INT;
+
+    -- 1. Tìm product_id từ variant_id vừa nhập
+    SELECT product_id INTO _product_id 
+    FROM product_variants 
+    WHERE variant_id = NEW.variant_id;
+
+    -- 2. Lấy số lượng tồn hiện tại của CẢ SẢN PHẨM (tất cả variants cộng lại)
+    -- Lý do: Giá vốn (cost_price) đang để ở bảng Products (chung cho cả dòng sp)
+    SELECT 
+        IFNULL(SUM(stock_quantity), 0) INTO _old_stock
+    FROM product_variants
+    WHERE product_id = _product_id;
+
+    -- 3. Lấy giá vốn hiện tại
+    SELECT cost_price INTO _current_cost
+    FROM products
+    WHERE product_id = _product_id;
+
+    -- 4. Tính giá vốn mới (Bình quân gia quyền)
+    -- Công thức: ((Tồn cũ * Giá cũ) + (Nhập mới * Giá mới)) / (Tồn cũ + Nhập mới)
+    SET _total_qty = _old_stock + NEW.quantity;
+    
+    IF _total_qty > 0 THEN
+        SET _new_avg_cost = ((_old_stock * _current_cost) + (NEW.quantity * NEW.cost_price)) / _total_qty;
+        
+        -- 5. Cập nhật lại giá vốn mới vào bảng products
+        UPDATE products 
+        SET cost_price = _new_avg_cost 
+        WHERE product_id = _product_id;
+    END IF;
+
+    -- 6. Cập nhật luôn số lượng tồn kho vào bảng variant
+    UPDATE product_variants
+    SET stock_quantity = stock_quantity + NEW.quantity
+    WHERE variant_id = NEW.variant_id;
+
+END$$
+
+DELIMITER ;
+
+-- 3. Kiểm tra lại kết quả (Sẽ thấy chênh lệch về 0 hoặc rất nhỏ)
+SELECT 'Đã cập nhật xong dữ liệu!' AS Thong_Bao;
 -- ================================================================
 -- TẠO TRIGGER (ĐƯA XUỐNG CUỐI CÙNG ĐỂ KHÔNG CHẠY KHI ĐANG SEED DATA)
 -- ================================================================
 
-DELIMITER //
 
-
--- Trigger giảm kho khi bán hàng
-DROP TRIGGER IF EXISTS trg_order_details_add //
-CREATE TRIGGER trg_order_details_add
-AFTER INSERT ON order_details
-FOR EACH ROW
-BEGIN
-    UPDATE product_variants
-    SET stock_quantity = stock_quantity - NEW.quantity
-    WHERE variant_id = NEW.variant_id;
-END //
-
--- Trigger hoàn tồn khi đơn hủy
-DROP TRIGGER IF EXISTS trg_order_cancel_return_stock //
-CREATE TRIGGER trg_order_cancel_return_stock
-AFTER UPDATE ON orders
-FOR EACH ROW
-BEGIN
-    IF NEW.status = 'Đã Hủy' AND OLD.status <> 'Đã Hủy' THEN
-        UPDATE product_variants pv
-        JOIN order_details od ON od.variant_id = pv.variant_id
-        SET pv.stock_quantity = pv.stock_quantity + od.quantity
-        WHERE od.order_id = NEW.order_id;
-    END IF;
-END //
-
--- Trigger hoàn tồn khi xóa chi tiết đơn (sửa đơn)
-DROP TRIGGER IF EXISTS trg_order_details_delete //
-CREATE TRIGGER trg_order_details_delete
-AFTER DELETE ON order_details
-FOR EACH ROW
-BEGIN
-    UPDATE product_variants
-    SET stock_quantity = stock_quantity + OLD.quantity
-    WHERE variant_id = OLD.variant_id;
-END //
-
-DELIMITER ;
-
-
-SET FOREIGN_KEY_CHECKS = 1;
 
 
 -- Dữ liệu mẫu tối thiểu cho roles
@@ -1914,9 +1957,57 @@ SET stock_quantity = (
 );
 
 
+-- ================================================================
+-- PHẦN BỔ SUNG: TỰ ĐỘNG CÂN BẰNG DỮ LIỆU (CHẠY CUỐI CÙNG)
+-- ================================================================
+SET SQL_SAFE_UPDATES = 0;
 
+-- 1. Cập nhật lại giá vốn (cost_price) trong bảng PRODUCTS
+-- Tính theo công thức Bình Quân Gia Quyền từ lịch sử nhập hàng
+UPDATE products p
+INNER JOIN (
+    SELECT 
+        v.product_id,
+        SUM(sid.quantity * sid.cost_price) / SUM(sid.quantity) as gia_von_trung_binh
+    FROM stock_in_details sid
+    JOIN product_variants v ON sid.variant_id = v.variant_id
+    GROUP BY v.product_id
+) AS TinhToan ON p.product_id = TinhToan.product_id
+SET p.cost_price = TinhToan.gia_von_trung_binh;
+
+-- 2. Cập nhật lại Tổng tiền phiếu nhập (STOCK_IN) cho khớp với chi tiết
+-- (Tránh trường hợp nhập tay số tổng bị lệch với số chi tiết cộng lại)
+UPDATE stock_in si
+SET total_cost = (
+    SELECT SUM(quantity * cost_price)
+    FROM stock_in_details
+    WHERE stock_in_id = si.stock_in_id
+);
+
+-- 3. Cập nhật lại Tổng tiền đơn hàng (ORDERS) cho khớp với chi tiết
+-- (Tính lại subtotal và final_total dựa trên order_details)
+UPDATE orders o
+SET 
+    subtotal = (SELECT SUM(quantity * price_at_order) FROM order_details WHERE order_id = o.order_id),
+    final_total = (SELECT SUM(quantity * price_at_order) FROM order_details WHERE order_id = o.order_id) + o.shipping_cost;
+
+-- 4. Cập nhật lại Số lượng Tồn kho (STOCK_QUANTITY) chuẩn xác
+-- Tồn = Tổng Nhập - Tổng Xuất (của đơn chưa hủy)
+UPDATE product_variants v
+SET stock_quantity = (
+    IFNULL((SELECT SUM(quantity) FROM stock_in_details WHERE variant_id = v.variant_id), 0)
+    - 
+    IFNULL((SELECT SUM(od.quantity) 
+            FROM order_details od
+            JOIN orders o ON od.order_id = o.order_id
+            WHERE od.variant_id = v.variant_id 
+            AND o.status <> 'Đã Hủy'), 0)
+);
+
+SET SQL_SAFE_UPDATES = 1;
+SELECT 'Đã hoàn tất cân bằng dữ liệu!' AS Message;
 -- 2. Cập nhật dữ liệu tên cho tài khoản OS01 (để đăng nhập không bị lỗi hiển thị)
-
+DROP TRIGGER IF EXISTS `after_stock_in_update_price`;
 SET SQL_SAFE_UPDATES = 1;
 SET FOREIGN_KEY_CHECKS = 1;
 

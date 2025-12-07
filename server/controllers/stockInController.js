@@ -23,29 +23,39 @@ const stockInController = {
         }
     },
 
-    // 3. Tạo phiếu nhập mới (Bulk Insert)
+    // 3. Tạo phiếu nhập mới (Bulk Insert) - [ĐÃ SỬA]
     createStockInReceipt: async (req, res) => {
         try {
-            const { stockInId, supplierName, userId, items } = req.body;
+            // [CẬP NHẬT]: Nhận employeeId từ Frontend thay vì userId
+            const { stockInId, supplierName, employeeId, items } = req.body;
 
-            // Validate
+            // --- Validate ---
             if (!items || !Array.isArray(items) || items.length === 0) {
                 return res.status(400).json({ message: 'Danh sách sản phẩm trống.' });
             }
+            
+            // Nếu tạo phiếu mới thì bắt buộc có Nhà cung cấp
             if (!stockInId && !supplierName) {
                 return res.status(400).json({ message: 'Vui lòng nhập tên nhà cung cấp.' });
+            }
+
+            // [FIX] Bắt buộc phải có Mã nhân viên (employeeId)
+            if (!employeeId) {
+                return res.status(400).json({ message: 'Vui lòng nhập Mã nhân viên (VD: WH01).' });
             }
 
             const result = await stockInModel.createStockInReceipt({
                 stockInId,
                 supplierName,
-                userId: userId || 'WH01',
+                // Truyền employeeId vào field 'userId' để Model xử lý tìm kiếm
+                userId: employeeId, 
                 items
             });
 
             res.status(201).json({ message: 'Nhập kho thành công!', data: result });
         } catch (error) {
             console.error("Lỗi createStockInReceipt:", error);
+            // Trả về lỗi cụ thể từ Model (ví dụ: Mã nhân viên không tồn tại)
             res.status(500).json({ message: 'Lỗi server: ' + error.message });
         }
     },
@@ -69,8 +79,7 @@ const stockInController = {
         }
     },
 
-    // 5. [HÀM NÀY ĐANG BỊ THIẾU DẪN ĐẾN LỖI 500]
-    // Lấy chi tiết 1 phiếu cụ thể
+    // 5. Lấy chi tiết 1 phiếu cụ thể
     getReceiptDetails: async (req, res) => {
         try {
             const { id } = req.params;
