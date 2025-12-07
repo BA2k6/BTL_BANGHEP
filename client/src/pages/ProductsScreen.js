@@ -257,20 +257,20 @@ export const ProductsScreen = ({ userRoleName }) => {
                                     </td>
 
                                     {/* Cột 4: Giá bán */}
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-6 py-4 whitespace-normal break-words leading-relaxed">
                                         <div className="text-sm font-bold text-gray-900">{formatCurrency(item.base_price)}</div>
                                         {canEdit && <div className="text-xs text-gray-500 mt-0.5">Vốn: {formatCurrency(item.cost_price)}</div>}
                                     </td>
 
                                     {/* Cột 5: Tổng tồn kho */}
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-6 py-4 whitespace-normal break-words leading-relaxed">
                                         <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${item.totalStock > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                             {item.totalStock > 0 ? `${item.totalStock} sp` : 'Hết hàng'}
                                         </span>
                                     </td>
                                     
                                     {/* Cột 6: Trạng thái (Clickable) */}
-                                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <td className="px-6 py-4 whitespace-normal break-words text-center leading-relaxed">
                                         <button
                                             onClick={() => handleToggleStatus(item.product_id, item.is_active)}
                                             disabled={!canEdit || isToggling === item.product_id}
@@ -291,7 +291,7 @@ export const ProductsScreen = ({ userRoleName }) => {
                                     </td>
 
                                     {/* Cột 7: Thao tác */}
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <td className="px-6 py-4 whitespace-normal break-words text-right text-sm font-medium leading-relaxed">
                                         <div className="flex justify-end gap-2">
                                             <button onClick={() => handleViewClick(item)} className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full" title="Xem chi tiết">
                                                 <Eye className="w-4 h-4" />

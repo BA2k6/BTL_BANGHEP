@@ -23,6 +23,8 @@ const salaryController = {
                 return res.status(400).json({ message: 'Vui lòng cung cấp tham số month ở định dạng YYYY-MM' });
             }
 
+            console.log(`[salaryController] calculateSalaries called for month=${month}`);
+
             // compute first and last day
             const monthStart = `${month}-01`;
 
@@ -30,6 +32,8 @@ const salaryController = {
             const [employees] = await require('../config/db.config').query(
                 `SELECT employee_id, user_id, base_salary, commission_rate FROM employees`
             );
+
+            console.log(`[salaryController] employees fetched: ${Array.isArray(employees) ? employees.length : 0}`);
 
             const db = require('../config/db.config');
 
@@ -45,7 +49,7 @@ const salaryController = {
 
                 const salaryId = `SAL${month.replace('-', '')}-${emp.employee_id}`;
 
-                await salaryModel.upsertSalary({
+                const upsertResult = await salaryModel.upsertSalary({
                     salary_id: salaryId,
                     employee_id: emp.employee_id,
                     month_year: monthStart,
@@ -54,6 +58,8 @@ const salaryController = {
                     bonus: 0,
                     deductions: 0
                 });
+
+                console.log(`[salaryController] upserted salary ${salaryId} for emp ${emp.employee_id} (user ${emp.user_id}) sales=${totalSales} commission=${salesCommission} upsertResult=${JSON.stringify(upsertResult)}`);
             }
 
             const newSalaries = await salaryModel.getAllSalaries();

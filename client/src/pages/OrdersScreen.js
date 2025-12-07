@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { Plus, Eye, Edit, Trash2, Truck, Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
+import ActionMenu from "../components/ActionMenu";
 import { getOrders, getOrderById, updateOrderStatus, updatePaymentStatus, deleteOrder } from "../services/api";
 
 export const OrdersScreen = ({ setPath, currentUserId, userRoleName }) => {
@@ -258,42 +259,17 @@ export const OrdersScreen = ({ setPath, currentUserId, userRoleName }) => {
                                     </span>
                                 </td>
 
-                                {/* Nút hành động */}
-                                <td className="px-6 py-4 text-right flex gap-2 justify-end">
-                                    
-                                    {/* 1. NÚT XEM (VIEW) */}
-                                    <button
-                                        onClick={() => handleViewDetails(o.id)}
-                                        className="text-blue-600 hover:text-blue-800 p-2 rounded-lg hover:bg-blue-50"
-                                        title="Xem chi tiết"
-                                    > <Eye size={20} /> </button>
-                                    
-                                    {/* 2. NÚT SỬA (EDIT) */}
-                                    {currentPermissions.canEdit && showEditDelete && (
-                                        <button
-                                            onClick={() => handleEdit(o.id)}
-                                            className="text-indigo-600 hover:text-indigo-800 p-2 rounded-lg hover:bg-indigo-50"
-                                            title="Sửa"
-                                        > <Edit size={20} /> </button>
-                                    )}
-                                    
-                                    {/* 3. NÚT XÓA (DELETE) */}
-                                    {currentPermissions.canDelete && showEditDelete && (
-                                        <button
-                                            onClick={() => handleDelete(o.id)}
-                                            className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50"
-                                            title="Xóa"
-                                        > <Trash2 size={20} /> </button>
-                                    )}
-                                    
-                                    {/* 4. NÚT CẬP NHẬT GIAO HÀNG (TRUCK) */}
-                                    {currentPermissions.canUpdateStatus && o.status !== 'Hoàn Thành' && o.status !== 'Đã Hủy' && (
-                                        <button
-                                            onClick={() => handleUpdateStatusClick(o.id, o.status)}
-                                            className="text-green-600 hover:text-green-800 p-2 rounded-lg hover:bg-green-50"
-                                            title="Cập nhật trạng thái giao"
-                                        > <Truck size={20} /> </button>
-                                    )}
+                                {/* Nút hành động: gom các hành động vào menu để gọn giao diện */}
+                                <td className="px-6 py-4 text-right text-sm font-medium">
+                                    <ActionMenu
+                                        buttonLabel={"⋯"}
+                                        items={[
+                                            { label: 'Xem chi tiết', onClick: () => handleViewDetails(o.id) },
+                                            ...(currentPermissions.canEdit && showEditDelete ? [{ label: 'Sửa', onClick: () => handleEdit(o.id) }] : []),
+                                            ...(currentPermissions.canUpdateStatus && o.status !== 'Hoàn Thành' && o.status !== 'Đã Hủy' ? [{ label: 'Cập nhật trạng thái', onClick: () => handleUpdateStatusClick(o.id, o.status) }] : []),
+                                            ...(currentPermissions.canDelete && showEditDelete ? [{ label: 'Xóa', onClick: () => handleDelete(o.id), danger: true }] : []),
+                                        ]}
+                                    />
                                 </td>
 
                             </tr>
@@ -321,20 +297,73 @@ export const OrdersScreen = ({ setPath, currentUserId, userRoleName }) => {
             {/* ORDER DETAILS MODAL (Giữ nguyên) */}
             {showDetails && orderDetails && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-2xl overflow-y-auto max-h-[90vh]">
+                    <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-3xl overflow-y-auto max-h-[90vh]">
                         <h3 className="text-2xl font-bold mb-4">Chi tiết Đơn hàng {orderDetails.id}</h3>
-                        <p>Kênh bán: **{orderDetails.orderChannel}** | Trạng thái: **{orderDetails.status}**</p>
-                        <p>Tổng tiền: **{Number(orderDetails.finalTotal).toLocaleString()} đ**</p>
-                        
-                        <h4 className="text-xl font-semibold mt-4 mb-2">Sản phẩm:</h4>
-                        <ul className="list-disc pl-5">
-                            {orderDetails.items && orderDetails.items.map((item, index) => (
-                                <li key={index}>
-                                    {item.product_name} ({item.color}/{item.size}) - SL: {item.quantity} x {Number(item.price_at_order).toLocaleString()} đ
-                                </li>
-                            ))}
-                            {(!orderDetails.items || orderDetails.items.length === 0) && <li>Không có sản phẩm.</li>}
-                        </ul>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div className="bg-gray-50 p-4 rounded">
+                                <h4 className="font-semibold mb-2">Khách hàng</h4>
+                                <p className="text-sm"><strong>{orderDetails.customerName || 'Khách lẻ'}</strong></p>
+                                <p className="text-sm text-gray-600">SĐT: {orderDetails.phone || 'N/A'}</p>
+                                <p className="text-sm text-gray-600">Địa chỉ: {orderDetails.address || 'N/A'}</p>
+                            </div>
+
+                            <div className="bg-gray-50 p-4 rounded">
+                                <h4 className="font-semibold mb-2">Thông tin đơn</h4>
+                                <p className="text-sm">Kênh: <span className="font-semibold">{orderDetails.order_channel || orderDetails.orderChannel || 'N/A'}</span></p>
+                                <p className="text-sm">Ngày đặt: <span className="font-semibold">{orderDetails.orderDate || 'N/A'}</span></p>
+                                <p className="text-sm">Trạng thái đơn: <span className="font-semibold">{orderDetails.status || 'N/A'}</span></p>
+                                <p className="text-sm">Trạng thái thanh toán: <span className="font-semibold">{orderDetails.payment_status || orderDetails.paymentStatus || 'N/A'}</span></p>
+                                <p className="text-sm">Phương thức thanh toán: <span className="font-semibold">{orderDetails.payment_method || orderDetails.paymentMethod || 'N/A'}</span></p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div className="p-4 bg-white rounded border">
+                                <p className="text-sm text-gray-600">Lương tạm (Subtotal)</p>
+                                <p className="font-semibold">{Number(orderDetails.subtotal || orderDetails.subTotal || 0).toLocaleString()} đ</p>
+                            </div>
+                            <div className="p-4 bg-white rounded border">
+                                <p className="text-sm text-gray-600">Phí giao hàng</p>
+                                <p className="font-semibold">{Number(orderDetails.shipping_cost || orderDetails.shippingCost || 0).toLocaleString()} đ</p>
+                            </div>
+                            <div className="p-4 bg-white rounded border">
+                                <p className="text-sm text-gray-600">Tổng thanh toán</p>
+                                <p className="font-semibold text-red-600">{Number(orderDetails.totalAmount || orderDetails.finalTotal || 0).toLocaleString()} đ</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-gray-50 p-4 rounded mb-4">
+                            <h4 className="font-semibold mb-2">Nhân viên</h4>
+                            <p className="text-sm">Người tạo: <span className="font-semibold">{orderDetails.staffName || orderDetails.employeeName || orderDetails.staff_id || 'N/A'}</span></p>
+                            <p className="text-sm">Người giao: <span className="font-semibold">{orderDetails.deliveryStaffName || orderDetails.delivery_staff_id || 'N/A'}</span></p>
+                        </div>
+
+                        <h4 className="text-xl font-semibold mt-2 mb-2">Sản phẩm</h4>
+                        <div className="overflow-auto max-h-60 border rounded">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-white">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left text-sm font-medium">Sản phẩm</th>
+                                        <th className="px-4 py-2 text-sm text-left">Biến thể</th>
+                                        <th className="px-4 py-2 text-right text-sm">SL</th>
+                                        <th className="px-4 py-2 text-right text-sm">Giá</th>
+                                        <th className="px-4 py-2 text-right text-sm">Thành tiền</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-100">
+                                    {orderDetails.items && orderDetails.items.map((item, idx) => (
+                                        <tr key={idx}>
+                                            <td className="px-4 py-2 text-sm">{item.product_name}</td>
+                                            <td className="px-4 py-2 text-sm">{item.color || '-'} / {item.size || '-'}</td>
+                                            <td className="px-4 py-2 text-right text-sm">{item.quantity}</td>
+                                            <td className="px-4 py-2 text-right text-sm">{Number(item.price_at_order).toLocaleString()} đ</td>
+                                            <td className="px-4 py-2 text-right text-sm">{Number(item.itemTotal || (item.quantity * item.price_at_order)).toLocaleString()} đ</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
 
                         <div className="flex justify-end mt-6">
                             <button onClick={() => setShowDetails(false)} className="px-4 py-2 bg-gray-600 text-white rounded-lg">Đóng</button>

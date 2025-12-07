@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Plus, Trash, ArrowLeft, X, Search } from "lucide-react";
 // Giả định bạn đã import các hàm API cần thiết:
-import { createOrder, findCustomerByPhone, getProducts, getCategories } from "../services/api"; 
+import { createOrder, findCustomerByPhone, getProducts, getCategories, getEmployees } from "../services/api"; 
 
 // ============================================================
 // COMPONENT CHÍNH: OrderCreateScreen (Cấu trúc POS 2 Cột)
@@ -21,14 +21,39 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    // Employee code (creator) - allow override if currentUser missing or for manual entry
+    const [employeeCode, setEmployeeCode] = useState(currentUser?.user_id || '');
     
     // STATE CHO CỘT CHỌN SẢN PHẨM
     const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
+    // Employees for delivery selection
+    const [employees, setEmployees] = useState([]);
+    const [deliveryStaffId, setDeliveryStaffId] = useState(null);
     // Vấn đề 1: State tìm kiếm
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('all');
+    const [deliveryStaffSearch, setDeliveryStaffSearch] = useState('');
+
+    // Filter employees by role
+    const saleEmployees = useMemo(() => {
+        return employees.filter(emp => emp.user_id && emp.user_id.startsWith('SALE'));
+    }, [employees]);
+
+    const shipEmployees = useMemo(() => {
+        return employees.filter(emp => emp.user_id && emp.user_id.startsWith('SHIP'));
+    }, [employees]);
+
+    // Filter ship employees by search term
+    const filteredShipEmployees = useMemo(() => {
+        if (!deliveryStaffSearch) return shipEmployees;
+        const search = deliveryStaffSearch.toLowerCase();
+        return shipEmployees.filter(emp =>
+            (emp.user_id && emp.user_id.toLowerCase().includes(search)) ||
+            (emp.full_name && emp.full_name.toLowerCase().includes(search))
+        );
+    }, [shipEmployees, deliveryStaffSearch]);
 
     // ============================================================
     // LOGIC TẢI DỮ LIỆU SẢN PHẨM VÀ DANH MỤC (ĐÃ SỬA LỖI TÌM KIẾM)
@@ -64,6 +89,22 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
 
         return () => clearTimeout(delaySearch);
     }, [selectedCategory, searchTerm]); 
+
+    // Load employees for delivery selection
+    useEffect(() => {
+        let mounted = true;
+        const load = async () => {
+            try {
+                const emps = await getEmployees();
+                if (!mounted) return;
+                setEmployees(emps || []);
+            } catch (err) {
+                console.error('Lỗi tải danh sách nhân viên:', err);
+            }
+        };
+        load();
+        return () => { mounted = false; };
+    }, []);
     
     // ============================================================
     // LOGIC TÌM KHÁCH HÀNG (Giữ nguyên)
@@ -182,14 +223,18 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
 
     const finalTotal = totalItems + shippingFee;
 
-    const createOrder = async () => {
+    const handleCreateOrder = async () => {
         if (items.length === 0) return setError("Chưa thêm sản phẩm.");
 
         setLoading(true);
         setError(null);
         
-        const employeeId = currentUser?.user_id; 
-        if (!employeeId) { setLoading(false); return setError("Lỗi: Không tìm thấy ID nhân viên."); }
+    // Use selected/entered employeeCode, or fallback to currentUser.user_id
+    const employeeId = (employeeCode && employeeCode.trim()) ? employeeCode.trim() : currentUser?.user_id; 
+    if (!employeeId) { 
+        setLoading(false); 
+        return setError("Lỗi: Vui lòng chọn hoặc nhập mã nhân viên. Các mã nhân viên hợp lệ: OS01, SALE1, SALE2, SHIP01, WH01, v.v."); 
+    }
         
         if (isOnlineChannel && !customerInfo) {
              setLoading(false);
@@ -197,8 +242,10 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
         }
 
         const payload = {
-            customerId: customerInfo?.customer_id || null, 
+            customerId: customerInfo?.customer_id || null,
+            customerPhone: customerInfo?.phone || customerPhone,
             employeeId: employeeId,
+            deliveryStaffId: deliveryStaffId || null,
             orderChannel: salesChannel,
             directDelivery: salesChannel === 'Trực tiếp', 
             
@@ -215,16 +262,59 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
         };
 
         try {
-            const res = await createOrder(payload);
+            console.log('[DEBUG] Sending createOrder payload:', JSON.stringify(payload, null, 2));
+            
+            let res;
+            try {
+                res = await createOrder(payload);
+                console.log('[DEBUG] createOrder returned:', res);
+            } catch (apiErr) {
+                console.error('[DEBUG] createOrder threw error:', apiErr);
+                // If API throws, treat it as an error
+                const errorMsg = apiErr?.message || JSON.stringify(apiErr) || 'Lỗi từ server (không xác định)';
+                setError(`Lỗi tạo đơn hàng: ${errorMsg}`);
+                setLoading(false);
+                return;
+            }
+            
+            console.log('[DEBUG] Checking response validity...');
+            console.log('[DEBUG] res type:', typeof res);
+            console.log('[DEBUG] res value:', res);
+            
+            // Handle case where response might be the Axios response object instead of just data
+            if (res && res.data && typeof res.data === 'object' && res.data.orderId) {
+                console.log('[DEBUG] Response appears to be Axios response object, extracting data');
+                res = res.data;
+            }
+            
+            // Check if response is valid
+            if (!res || typeof res !== 'object') {
+                console.error('[ERROR] Response is invalid:', res);
+                setError(`Lỗi: Server trả về dữ liệu không hợp lệ. Dữ liệu: ${JSON.stringify(res)}`);
+                setLoading(false);
+                return;
+            }
+            
+            // Safely extract orderId from response
+            const orderId = res.orderId || res.id;
+            
+            if (!orderId) {
+                console.error('[ERROR] Response missing orderId. Full response:', JSON.stringify(res, null, 2));
+                setError(`Lỗi: Server không trả về mã đơn hàng. Chi tiết: ${JSON.stringify(res)}`);
+                setLoading(false);
+                return;
+            }
 
-            alert("Tạo đơn hàng thành công! Mã đơn: " + res.orderId);
+            console.log('[DEBUG] Order created successfully with ID:', orderId);
+            alert("Tạo đơn hàng thành công! Mã đơn: " + orderId);
             if (typeof setPath === 'function') {
                 setPath("/orders");
             }
 
         } catch (err) {
-            setError(err.message || "Lỗi kết nối server.");
-            console.error(err);
+            console.error('[ERROR] Unexpected exception in createOrder:', err);
+            const errorMsg = err?.message || JSON.stringify(err) || "Lỗi kết nối server.";
+            setError(`Lỗi không mong muốn: ${errorMsg}`);
         } finally {
             setLoading(false);
         }
@@ -240,7 +330,7 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
             <div className="w-[500px] flex-shrink-0 space-y-4 p-4 md:p-6 bg-white shadow-xl border-r">
                 
                 <div className="flex justify-between items-center border-b pb-4">
-                    <h1 className="text-3xl font-bold text-blue-700">Tạo Đơn Hàng (POS)</h1>
+                    <h1 className="text-3xl font-bold text-blue-700 leading-relaxed">Tạo Đơn Hàng (POS)</h1>
                     <button
                         onClick={() => { if (typeof setPath === 'function') { setPath("/orders"); } }}
                         className="flex items-center gap-2 text-gray-700 hover:text-black text-sm"
@@ -268,6 +358,31 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
 
                     {/* KHÁCH HÀNG */}
                     <div className="p-3 border rounded-lg">
+                        <div className="mb-2">
+                            <p className="font-semibold mb-1 text-sm">Mã nhân viên tạo đơn:</p>
+                            {saleEmployees.length > 0 ? (
+                                <select
+                                    value={employeeCode}
+                                    onChange={(e) => setEmployeeCode(e.target.value)}
+                                    className="border p-1 rounded-lg w-full text-sm mb-2 bg-white"
+                                >
+                                    <option value="">-- Chọn nhân viên --</option>
+                                    {saleEmployees.map((emp) => (
+                                        <option key={emp.user_id} value={emp.user_id}>
+                                            {emp.user_id} - {emp.full_name}
+                                        </option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <input
+                                    type="text"
+                                    placeholder="Nhập mã nhân viên SALE"
+                                    value={employeeCode}
+                                    onChange={(e) => setEmployeeCode(e.target.value)}
+                                    className="border p-1 rounded-lg w-full text-sm mb-2"
+                                />
+                            )}
+                        </div>
                         <p className="font-semibold mb-1 text-sm">Khách hàng:</p>
                         {customerInfo ? (
                             <div className="bg-green-50 p-2 rounded-md flex justify-between items-center text-sm">
@@ -305,8 +420,8 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
                                 className="flex justify-between items-center p-2 border-b bg-gray-50 rounded-md"
                             >
                                 <div className="flex-1 text-sm">
-                                    <p className="font-bold">{it.name}</p>
-                                    <p className="text-xs text-gray-600">{it.color}/{it.size}</p>
+                                    <p className="font-bold text-sm leading-relaxed">{it.name}</p>
+                                    <p className="text-xs text-gray-600 leading-relaxed">{it.color}/{it.size}</p>
                                 </div>
                                 
                                 <div className="flex items-center gap-2 mx-4">
@@ -346,31 +461,59 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
                     
                     {/* PHÍ VẬN CHUYỂN LOGIC (Giữ nguyên) */}
                     {isOnlineChannel && (
-                         <div className="mt-2 flex justify-between items-center">
-                             <p className="font-medium text-sm">Phí giao hàng:</p>
-                             <div className="flex flex-col items-end gap-1">
+                         <div className="mt-2">
+                             <div className="flex justify-between items-center">
+                                 <p className="font-medium text-sm">Phí giao hàng:</p>
+                                 <div className="flex flex-col items-end gap-1">
+                                     <select
+                                         value={shippingOption}
+                                         onChange={(e) => setShippingOption(e.target.value)}
+                                         className="p-1 border rounded-lg text-sm w-40"
+                                     >
+                                         <option value="auto">Tự động</option>
+                                         <option value="manual">Nhập thủ công</option>
+                                     </select>
+                                     {shippingOption === "manual" ? (
+                                         <input
+                                             type="number"
+                                             value={manualShippingFee}
+                                             onChange={(e) => setManualShippingFee(e.target.value)}
+                                             className="border p-1 w-24 rounded-lg text-right text-sm"
+                                             placeholder="Phí ship"
+                                         />
+                                     ) : (
+                                         <p className="text-sm">{shippingFee.toLocaleString()} đ</p>
+                                     )}
+                                 </div>
+                             </div>
+
+                             {/* Chọn nhân viên giao hàng */}
+                             <div className="mt-2">
+                                 <p className="font-medium text-sm">Nhân viên giao hàng:</p>
+                                 <input
+                                     type="text"
+                                     placeholder="Tìm nhân viên giao hàng..."
+                                     value={deliveryStaffSearch}
+                                     onChange={(e) => setDeliveryStaffSearch(e.target.value)}
+                                     className="p-1 border rounded-lg w-full text-sm mb-2"
+                                 />
                                  <select
-                                     value={shippingOption}
-                                     onChange={(e) => setShippingOption(e.target.value)}
-                                     className="p-1 border rounded-lg text-sm w-40"
+                                     value={deliveryStaffId || ''}
+                                     onChange={(e) => setDeliveryStaffId(e.target.value || null)}
+                                     className="p-1 border rounded-lg w-full"
                                  >
-                                     <option value="auto">Tự động</option>
-                                     <option value="manual">Nhập thủ công</option>
+                                     <option value="">-- Chọn nhân viên giao hàng --</option>
+                                     {filteredShipEmployees.map(emp => (
+                                         <option key={emp.user_id || emp.id} value={emp.user_id || emp.id}>
+                                             {emp.user_id} - {emp.full_name || emp.fullName || emp.username}
+                                         </option>
+                                     ))}
                                  </select>
-                                 {shippingOption === "manual" ? (
-                                     <input
-                                         type="number"
-                                         value={manualShippingFee}
-                                         onChange={(e) => setManualShippingFee(e.target.value)}
-                                         className="border p-1 w-24 rounded-lg text-right text-sm"
-                                         placeholder="Phí ship"
-                                     />
-                                 ) : (
-                                     <p className="text-sm">{shippingFee.toLocaleString()} đ</p>
-                                 )}
                              </div>
                          </div>
                     )}
+                    
+                    
                     
                     {/* PHƯƠNG THỨC THANH TOÁN */}
                     <div className="mt-2 flex justify-between items-center">
@@ -393,7 +536,7 @@ export const OrderCreateScreen = ({ currentUser, setPath }) => {
 
                 {/* NÚT TẠO ĐƠN */}
                 <button
-                    onClick={createOrder}
+                    onClick={handleCreateOrder}
                     disabled={loading || items.length === 0 || (isOnlineChannel && !customerInfo)}
                     className="w-full bg-green-600 text-white py-3 rounded-xl text-lg font-bold disabled:opacity-50 hover:bg-green-700 mt-4"
                 >

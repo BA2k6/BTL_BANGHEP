@@ -23,9 +23,10 @@ const productController = {
 
         const query = `
             SELECT 
-                p.product_id, p.name, p.category_id, p.base_price, p.cost_price, 
+                p.product_id, p.name, p.category_id, 
+                p.base_price, -- ✅ FIXED: Dùng tên cột chính xác trong DB (bỏ p.price)
+                p.cost_price, 
                 p.is_active,  -- Added to let Frontend know status
-                p.brand,      -- Added brand
                 pv.variant_id, pv.color, pv.size, pv.stock_quantity, pv.additional_price
             FROM products p
             LEFT JOIN product_variants pv ON p.product_id = pv.product_id

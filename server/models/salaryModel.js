@@ -41,8 +41,8 @@ const salaryModel = {
 
         const query = `
             INSERT INTO salaries
-            (salary_id, employee_id, month_year, base_salary, sales_commission, bonus, deductions)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (salary_id, employee_id, month_year, base_salary, sales_commission, bonus, deductions, paid_at, paid_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'Unpaid')
             ON DUPLICATE KEY UPDATE
                 base_salary = VALUES(base_salary),
                 sales_commission = VALUES(sales_commission),

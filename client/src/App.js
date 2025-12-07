@@ -24,6 +24,7 @@ import { ContactScreen } from './pages/ContactScreen';
 import ProductDetail from "./pages/ProductDetail";
 import { ProfileScreen } from './pages/ProfileScreen';
 import { OrderCreateScreen } from './pages/OrderCreateScreen';
+import { OrderEditScreen } from './pages/OrderEditScreen';
 
 // Component Chứa Nội dung chính
 const AppContent = ({ path, setPath, currentUser, userRoleName, onRefreshUser,refreshKey }) => {
@@ -108,22 +109,26 @@ export default function App() {
     const [isCheckingAuth, setIsCheckingAuth] = useState(true);
     const [refreshKey, setRefreshKey] = useState(0);
 
-    // --- LOGIC MỚI: XÓA SẠCH PHIÊN ĐĂNG NHẬP KHI F5 / KHỞI ĐỘNG LẠI ---
+    // --- LOGIC MỚI: KHỞI TẠO TRẠNG THÁI NGƯỜI DÙNG TỪ LOCALSTORAGE ---
     useEffect(() => {
-        console.log("App Started: Clearing all session data...");
-        
-        // 1. Xóa sạch LocalStorage
-        localStorage.clear(); 
-        
-        // 2. Reset toàn bộ State về mặc định (Chưa đăng nhập)
-        setIsLoggedIn(false);
-        setUserRoleName(null);
-        setCurrentUser(null);
-        
-        // 3. Đưa về trang chủ (Gateway)
-        setPath('/'); 
-        
-        setIsCheckingAuth(false);
+        // Khi app khởi động, cố gắng load user từ localStorage để giữ session (nếu có)
+        try {
+            const storedUser = localStorage.getItem('user');
+            if (storedUser) {
+                const parsed = JSON.parse(storedUser);
+                setCurrentUser(parsed);
+                setUserRoleName(parsed.roleName || parsed.role_name || null);
+                setIsLoggedIn(true);
+            } else {
+                // Không có user lưu sẵn -> ở trạng thái chưa đăng nhập
+                setIsLoggedIn(false);
+            }
+        } catch (err) {
+            console.error('Failed to load stored user:', err);
+            setIsLoggedIn(false);
+        } finally {
+            setIsCheckingAuth(false);
+        }
     }, []); 
 
     const handleLogout = () => {
@@ -137,17 +142,19 @@ export default function App() {
     const setUser = (user) => {
         const normalizedUser = {
             ...user,
-            id: user.userId || user.id, 
-            fullName: user.fullName || user.username || "User" 
+            id: user.userId || user.id,
+            user_id: user.userId || user.id,
+            userId: user.userId || user.id,
+            fullName: user.fullName || user.username || "User"
         };
 
         setCurrentUser(normalizedUser);
-        setUserRoleName(normalizedUser.roleName);
+        setUserRoleName(normalizedUser.roleName || normalizedUser.role_name);
         
-        if(user.token) localStorage.setItem('jwt_token', user.token);
+        if (user.token) localStorage.setItem('jwt_token', user.token);
         localStorage.setItem('user_id', normalizedUser.id);
-        localStorage.setItem('user_role_name', normalizedUser.roleName);
-        localStorage.setItem('user', JSON.stringify(normalizedUser)); 
+        localStorage.setItem('user_role_name', normalizedUser.roleName || normalizedUser.role_name);
+        localStorage.setItem('user', JSON.stringify(normalizedUser));
     };
     const handleRefreshUser = () => {
         console.log("Refreshing user data from LocalStorage...");

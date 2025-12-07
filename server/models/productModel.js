@@ -15,10 +15,7 @@ const productModel = {
 
         const query = `
             SELECT 
-                p.product_id as id,
-                p.name,
-                p.base_price as price,
-                p.cost_price as costPrice,
+                p.product_id, p.name, p.category_id, p.base_price, p.cost_price,
                 p.is_active as isActive,
                 p.category_id as categoryId,
                 c.category_name as categoryName,

@@ -1,9 +1,7 @@
-// server/controllers/stockInController.js
-
 const stockInModel = require('../models/stockInModel');
 
 const stockInController = {
-    // 1. Lấy danh sách các phiếu nhập (Header)
+    // 1. Lấy danh sách phiếu nhập (Master)
     listStockInReceipts: async (req, res) => {
         try {
             const receipts = await stockInModel.getAllStockInReceipts();
@@ -14,7 +12,7 @@ const stockInController = {
         }
     },
 
-    // 2. Lấy danh sách chi tiết hàng hóa đã nhập
+    // 2. Lấy danh sách chi tiết hàng hóa (Items phẳng)
     listStockInItems: async (req, res) => {
         try {
             const items = await stockInModel.getAllStockInItems();
@@ -25,70 +23,64 @@ const stockInController = {
         }
     },
 
-    // 3. Tạo mới dòng nhập kho (Master + Detail + Update Stock)
-    createStockInItem: async (req, res) => {
+    // 3. Tạo phiếu nhập mới (Bulk Insert)
+    createStockInReceipt: async (req, res) => {
         try {
-            const { variantId, quantity, priceImport, note, stockInId } = req.body;
-            
-            // Validate dữ liệu cơ bản
-            if (!variantId || !quantity || quantity <= 0) {
-                return res.status(400).json({ message: 'Vui lòng chọn biến thể và số lượng hợp lệ.' });
+            const { stockInId, supplierName, userId, items } = req.body;
+
+            // Validate
+            if (!items || !Array.isArray(items) || items.length === 0) {
+                return res.status(400).json({ message: 'Danh sách sản phẩm trống.' });
             }
-            if (priceImport === undefined || priceImport === null || priceImport < 0) {
-                return res.status(400).json({ message: 'Giá nhập không hợp lệ.' });
+            if (!stockInId && !supplierName) {
+                return res.status(400).json({ message: 'Vui lòng nhập tên nhà cung cấp.' });
             }
 
-            const result = await stockInModel.createStockInItem({
-                variantId,
-                quantity,
-                priceImport,
-                note,
+            const result = await stockInModel.createStockInReceipt({
                 stockInId,
-                // Nếu bạn có middleware xác thực, có thể lấy ID nhân viên từ req.user.id
-                userId: 'WH01' // Mặc định hoặc lấy từ token
+                supplierName,
+                userId: userId || 'WH01',
+                items
             });
 
-            res.status(201).json({ 
-                message: 'Nhập kho thành công.', 
-                data: result 
-            });
-
+            res.status(201).json({ message: 'Nhập kho thành công!', data: result });
         } catch (error) {
-            console.error("Lỗi createStockInItem:", error);
-            res.status(500).json({ message: 'Lỗi server khi nhập kho: ' + error.message });
+            console.error("Lỗi createStockInReceipt:", error);
+            res.status(500).json({ message: 'Lỗi server: ' + error.message });
         }
     },
 
-    // 4. Xóa dòng nhập kho
+    // 4. Xóa dòng chi tiết
     deleteStockInItem: async (req, res) => {
         try {
-            const { id } = req.params; // ID dạng composite: SI001_V001_1
-            
-            if (!id || !id.includes('_')) {
-                return res.status(400).json({ message: 'ID không hợp lệ.' });
-            }
+            const { id } = req.params; 
+            if (!id || !id.includes('_')) return res.status(400).json({ message: 'ID không hợp lệ.' });
 
-            // Tách ID: Phần đầu là stockInId, phần còn lại nối lại là variantId
-            // Ví dụ: SI2024_VAR_01 -> stockInId="SI2024", variantId="VAR_01"
             const parts = id.split('_');
             const stockInId = parts[0];
-            const variantId = parts.slice(1).join('_'); 
-            
-            if (!stockInId || !variantId) {
-                return res.status(400).json({ message: 'Không xác định được phiếu nhập hoặc biến thể.' });
-            }
+            const variantId = parts.slice(1).join('_');
 
             await stockInModel.deleteStockInItem(stockInId, variantId);
-            
-            res.status(200).json({ message: 'Đã xóa chi tiết nhập kho và cập nhật lại tồn kho.' });
-
+            res.status(200).json({ message: 'Đã xóa chi tiết nhập kho.' });
         } catch (error) {
             console.error("Lỗi deleteStockInItem:", error);
-            // Kiểm tra thông điệp lỗi từ Model để trả về status code phù hợp
-            if (error.message === "Chi tiết phiếu nhập không tồn tại") {
-                return res.status(404).json({ message: error.message });
-            }
-            res.status(500).json({ message: 'Lỗi server khi xóa: ' + error.message });
+            if (error.message.includes("không tồn tại")) return res.status(404).json({ message: error.message });
+            res.status(500).json({ message: 'Lỗi server: ' + error.message });
+        }
+    },
+
+    // 5. [HÀM NÀY ĐANG BỊ THIẾU DẪN ĐẾN LỖI 500]
+    // Lấy chi tiết 1 phiếu cụ thể
+    getReceiptDetails: async (req, res) => {
+        try {
+            const { id } = req.params;
+            if (!id) return res.status(400).json({ message: 'Thiếu mã phiếu nhập.' });
+
+            const details = await stockInModel.getStockInDetailsById(id);
+            res.status(200).json(details);
+        } catch (error) {
+            console.error("Lỗi getReceiptDetails:", error);
+            res.status(500).json({ message: 'Lỗi server khi tải chi tiết phiếu.' });
         }
     }
 };

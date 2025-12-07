@@ -4,6 +4,7 @@ import axios from 'axios';
 // [DEBUG] Nếu bạn thấy dòng này trong Console (F12) nghĩa là file MỚI đã chạy
 console.log("%c[API] Đã cập nhật phiên bản: FIX LỖI ĐĂNG XUẤT", "background: green; color: white; padding: 4px; font-weight: bold");
 console.log("%c[API] Đã cập nhật phiên bản: THÊM UPDATE STATUS SẢN PHẨM", "background: purple; color: white; padding: 4px; font-weight: bold");
+console.log("%c[API] Đã cập nhật phiên bản: FIX RESPONSE UNDEFINED", "background: orange; color: white; padding: 4px; font-weight: bold");
 const api = axios.create({
     baseURL: 'http://localhost:5001/api', 
     headers: {
@@ -37,6 +38,12 @@ api.interceptors.response.use(
     (response) => {
         // [DEBUG] Log thành công màu xanh lá
         console.log(`%c[SUCCESS] ${response.config.url}`, 'color: green; font-weight: bold', response.data);
+        if (!response) {
+            console.error('[INTERCEPTOR] ERROR: response is null/undefined!');
+        }
+        if (!response.data) {
+            console.error('[INTERCEPTOR] ERROR: response.data is null/undefined!');
+        }
         return response;
     },
     (error) => {
@@ -376,16 +383,44 @@ export const getOrderById = async (orderId) => {
  * @param {object} orderData - Dữ liệu đơn hàng (customerPhone, employeeId, items, subtotal, ...)
  */
 export const createOrder = async (orderData) => {
-    try {
-        // Route: POST /api/orders
-        const response = await api.post('/orders', orderData);
-        return response.data;
-    } catch (error) {
-        throw error.response?.data || { message: 'Lỗi khi tạo đơn hàng.' };
-    }
-};
-
-/**
+    console.log('[createOrder] Starting...');
+    console.log('[createOrder] Payload:', orderData);
+    
+    try {
+        console.log('[createOrder] Calling api.post...');
+        const response = await api.post('/orders', orderData);
+        
+        console.log('[createOrder] Got response object:', response);
+        console.log('[createOrder] Response type:', typeof response);
+        console.log('[createOrder] Response.data:', response?.data);
+        console.log('[createOrder] Response.data type:', typeof response?.data);
+        
+        if (!response || !response.data) {
+            console.error('[createOrder] Response or response.data is missing!');
+            throw new Error('Response from server is missing data');
+        }
+        
+        const result = response.data;
+        console.log('[createOrder] Returning result:', result);
+        return result;
+        
+    } catch (error) {
+        console.error('[createOrder] Caught error:', error);
+        console.error('[createOrder] error instanceof Error:', error instanceof Error);
+        console.error('[createOrder] error.response:', error?.response);
+        console.error('[createOrder] error.response?.data:', error?.response?.data);
+        console.error('[createOrder] error.message:', error?.message);
+        console.error('[createOrder] error.toString():', error?.toString());
+        
+        // Throw the most informative error we can find
+        const errorData = error.response?.data || error.message || { 
+            message: 'Lỗi khi tạo đơn hàng (không xác định).' 
+        };
+        
+        console.error('[createOrder] Throwing error:', errorData);
+        throw errorData;
+    }
+};/**
  * Cập nhật đơn hàng hiện có. Dùng cho OrderEditScreen.js
  * @param {string} orderId 
  * @param {object} orderData - Dữ liệu cần cập nhật (items, shippingCost, paymentMethod, ...)

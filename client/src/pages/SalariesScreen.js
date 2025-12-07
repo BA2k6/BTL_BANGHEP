@@ -7,6 +7,7 @@ import { DollarSign, Search, Plus, Edit, Trash2 } from 'lucide-react';
 import { getSalaries, calculateSalaries, paySalary, patchSalary, deleteSalary } from '../services/api'; 
 import api from '../services/api';
 import SalaryEditModal from '../components/SalaryEditModal';
+import ActionMenu from '../components/ActionMenu';
 // Import các hằng số và hàm tiện ích
 import { ROLES } from '../utils/constants';
 import { formatCurrency, normalizeSearchableValue } from '../utils/helpers';
@@ -83,7 +84,7 @@ export const SalariesScreen = ({ userRoleName }) => {
             <p className="text-gray-500">Quyền: Owner (toàn quyền quản lý bảng lương)</p>
 
             <div className="bg-white p-4 rounded-xl shadow-lg">
-                <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-3">
+                    <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-3">
                     {/* Ô TÌM KIẾM */}
                     <div className="relative flex-grow w-full sm:w-auto">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -100,14 +101,24 @@ export const SalariesScreen = ({ userRoleName }) => {
                             onClick={async () => {
                                 const month = prompt('Nhập tháng theo định dạng YYYY-MM, ví dụ 2025-12');
                                 if (!month) return;
+                                // Basic validation for YYYY-MM
+                                const m = month.trim();
+                                const valid = /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
+                                if (!valid) {
+                                    alert('Định dạng tháng không hợp lệ. Vui lòng nhập YYYY-MM, ví dụ 2025-12');
+                                    return;
+                                }
                                 try {
                                     setIsLoading(true);
-                                    await calculateSalaries(month);
+                                    const calcRes = await calculateSalaries(m);
+                                    console.log('calculateSalaries response:', calcRes);
+                                    // Always refresh from server to ensure UI shows latest data
                                     await refresh();
                                     alert('Tính lương thành công.');
                                 } catch (err) {
-                                    console.error(err);
-                                    alert(err.message || 'Lỗi khi tính lương.');
+                                    console.error('Error when calculating salaries:', err);
+                                    const msg = err?.response?.data?.message || err?.message || JSON.stringify(err);
+                                    alert(msg || 'Lỗi khi tính lương.');
                                 } finally {
                                     setIsLoading(false);
                                 }
@@ -127,9 +138,6 @@ export const SalariesScreen = ({ userRoleName }) => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mã NV</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Họ tên NV</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lương cơ bản</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hoa hồng</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thưởng</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Khấu trừ</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thực nhận</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng thái</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
@@ -139,81 +147,85 @@ export const SalariesScreen = ({ userRoleName }) => {
                             {filteredSalaries.map((s) => (
                                 <tr key={s.salary_id} className="hover:bg-gray-50">
                                     {/* Giả định month_year là string 'YYYY-MM-DD' và staff_name được JOIN từ bảng Users */}
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{s.month_year ? s.month_year.substring(0, 7) : 'N/A'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-mono">{s.user_id}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{s.staff_name || 'Đang cập nhật'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(s.base_salary)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600">{formatCurrency(s.sales_commission)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">{formatCurrency(s.bonus)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">{formatCurrency(s.deductions)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-indigo-600">{formatCurrency(s.net_salary)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                    <td className="px-6 py-4 whitespace-normal break-words leading-relaxed text-sm font-medium text-gray-900">{(function renderMonth(iso){
+                                        if (!iso) return 'N/A';
+                                        try {
+                                            const d = new Date(iso);
+                                            if (isNaN(d)) return iso.substring(0,7);
+                                            const y = d.getFullYear();
+                                            const m = String(d.getMonth() + 1).padStart(2, '0');
+                                            return `${y}-${m}`;
+                                        } catch (e) {
+                                            return iso.substring(0,7);
+                                        }
+                                    })(s.month_year)}</td>
+                                    <td className="px-6 py-4 whitespace-normal break-words leading-relaxed text-sm text-blue-600 font-mono">{s.user_id}</td>
+                                    <td className="px-6 py-4 whitespace-normal break-words leading-relaxed text-sm text-gray-900">{s.staff_name || 'Đang cập nhật'}</td>
+                                    <td className="px-6 py-4 whitespace-normal break-words leading-relaxed text-sm text-gray-900">{formatCurrency(s.base_salary)}</td>
+                                    <td className="px-6 py-4 whitespace-normal break-words leading-relaxed text-sm font-bold text-indigo-600">{formatCurrency(s.net_salary)}</td>
+                                    <td className="px-6 py-4 whitespace-normal break-words leading-relaxed text-sm">
                                         <span className={`px-2 py-1 rounded text-xs font-semibold ${s.paid_status === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                                             {s.paid_status === 'Paid' ? '✓ Đã trả' : '⏳ Chưa trả'}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        {canEdit && (
-                                            <>
-                                                <button
-                                                    title="Đánh dấu đã trả"
-                                                    onClick={async () => {
-                                                        if (!confirm(`Đánh dấu lương #${s.salary_id} là đã trả?`)) return;
-                                                        try {
-                                                            setIsLoading(true);
-                                                            if (typeof paySalary === 'function') {
-                                                                await paySalary(s.salary_id);
-                                                            } else {
-                                                                // fallback: call API directly
-                                                                await api.patch(`/salaries/${encodeURIComponent(s.salary_id)}/pay`);
+                                            {canEdit && (
+                                                <ActionMenu
+                                                    buttonLabel={<span className="text-sm">⋯</span>}
+                                                    items={[
+                                                        {
+                                                            label: 'Đánh dấu đã trả',
+                                                            icon: <DollarSign className="w-4 h-4" />,
+                                                            onClick: async () => {
+                                                                if (!confirm(`Đánh dấu lương #${s.salary_id} là đã trả?`)) return;
+                                                                try {
+                                                                    setIsLoading(true);
+                                                                    if (typeof paySalary === 'function') {
+                                                                        await paySalary(s.salary_id);
+                                                                    } else {
+                                                                        await api.patch(`/salaries/${encodeURIComponent(s.salary_id)}/pay`);
+                                                                    }
+                                                                    await refresh();
+                                                                    alert('Đã cập nhật trạng thái trả lương.');
+                                                                } catch (err) {
+                                                                    console.error(err);
+                                                                    alert((err && err.message) || 'Lỗi khi cập nhật trạng thái trả lương.');
+                                                                } finally {
+                                                                    setIsLoading(false);
+                                                                }
                                                             }
-                                                            await refresh();
-                                                            alert('Đã cập nhật trạng thái trả lương.');
-                                                        } catch (err) {
-                                                            console.error(err);
-                                                            alert((err && err.message) || 'Lỗi khi cập nhật trạng thái trả lương.');
-                                                        } finally {
-                                                            setIsLoading(false);
-                                                        }
-                                                    }}
-                                                    className="text-green-600 hover:text-green-900 mr-3 p-1 rounded-full hover:bg-green-100 transition"
-                                                >
-                                                    <DollarSign className="w-5 h-5" />
-                                                </button>
-                                                <button
-                                                    title="Sửa chi tiết"
-                                                    onClick={() => { setEditingSalary(s); setShowEditModal(true); }}
-                                                    className="text-indigo-600 hover:text-indigo-900 mr-3 p-1 rounded-full hover:bg-indigo-100 transition"
-                                                >
-                                                    <Edit className="w-5 h-5" />
-                                                </button>
-                                                <button
-                                                    title="Xóa/Hủy"
-                                                    onClick={async () => {
-                                                        if (!confirm(`Xác nhận xóa bảng lương #${s.salary_id}?`)) return;
-                                                        try {
-                                                            setIsLoading(true);
-                                                            if (typeof deleteSalary === 'function') {
-                                                                await deleteSalary(s.salary_id);
-                                                            } else {
-                                                                // fallback: call API directly
-                                                                await api.delete(`/salaries/${encodeURIComponent(s.salary_id)}`);
+                                                        },
+                                                        {
+                                                            label: 'Sửa chi tiết',
+                                                            icon: <Edit className="w-4 h-4" />, 
+                                                            onClick: () => { setEditingSalary(s); setShowEditModal(true); }
+                                                        },
+                                                        {
+                                                            label: 'Xóa',
+                                                            danger: true,
+                                                            icon: <Trash2 className="w-4 h-4" />, 
+                                                            onClick: async () => {
+                                                                if (!confirm(`Xác nhận xóa bảng lương #${s.salary_id}?`)) return;
+                                                                try {
+                                                                    setIsLoading(true);
+                                                                    if (typeof deleteSalary === 'function') {
+                                                                        await deleteSalary(s.salary_id);
+                                                                    } else {
+                                                                        await api.delete(`/salaries/${encodeURIComponent(s.salary_id)}`);
+                                                                    }
+                                                                    await refresh();
+                                                                    alert('Đã xóa bảng lương.');
+                                                                } catch (err) {
+                                                                    console.error(err);
+                                                                    alert((err && err.message) || 'Lỗi khi xóa bảng lương.');
+                                                                } finally {
+                                                                    setIsLoading(false);
+                                                                }
                                                             }
-                                                            await refresh();
-                                                            alert('Đã xóa bảng lương.');
-                                                        } catch (err) {
-                                                            console.error(err);
-                                                            alert((err && err.message) || 'Lỗi khi xóa bảng lương.');
-                                                        } finally {
-                                                            setIsLoading(false);
                                                         }
-                                                    }}
-                                                    className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-red-100 transition"
-                                                >
-                                                    <Trash2 className="w-5 h-5" />
-                                                </button>
-                                            </>
-                                        )}
+                                                    ]}
+                                                />
+                                            )}
                                     </td>
                                 </tr>
                             ))}

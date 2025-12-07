@@ -1,3 +1,4 @@
+// server/controllers/orderController.js
 const db = require('../config/db.config');
 const orderModel = require('../models/orderModel'); 
 
@@ -11,7 +12,6 @@ async function generateOrderId(conn) {
 
     if (rows.length === 0) return "ORD001";
 
-    // Xử lý logic tăng ID
     const last = rows[0].order_id.replace("ORD", "");
     const next = String(parseInt(last) + 1).padStart(3, "0");
 
@@ -38,57 +38,67 @@ const orderController = {
     createOrder: async (req, res) => {
         const conn = await db.getConnection();
         try {
+            // DEBUG Log
+            try { console.log('[DEBUG] Incoming createOrder payload:', JSON.stringify(req.body)); } catch (e) {}
+
             await conn.beginTransaction();
             
-            // Lấy các trường từ Frontend (ĐÃ CÓ TRƯỜNG TÍNH TOÁN TIỀN TỪ FRONTEND)
             const { 
-                customerPhone, employeeId, orderChannel, directDelivery, 
+                customerPhone, customerId: customerIdFromClient, employeeId, deliveryStaffId, orderChannel, directDelivery, 
                 items, subtotal, shippingCost, finalTotal, paymentMethod 
             } = req.body;
 
-            if (!customerPhone || !employeeId || !items || items.length === 0 || 
+            // Validate
+            if (!employeeId || !items || items.length === 0 || 
                 subtotal === undefined || shippingCost === undefined || finalTotal === undefined || !paymentMethod
             ) {
                 await conn.rollback(); 
-                return res.status(400).json({ message: "Thiếu dữ liệu tạo đơn hàng (Khách hàng, Nhân viên, Sản phẩm hoặc thông tin tiền tệ)." });
+                return res.status(400).json({ message: "Thiếu dữ liệu tạo đơn hàng (Nhân viên, Sản phẩm hoặc thông tin tiền tệ)." });
             }
 
             // 1. Tìm Customer ID
-            const [cust] = await conn.query("SELECT customer_id FROM customers WHERE phone = ?", [customerPhone]);
-            if (cust.length === 0) { 
-                await conn.rollback(); 
-                return res.status(404).json({ message: "Không tìm thấy khách hàng." }); 
+            let customerId = null;
+            if (customerIdFromClient) {
+                customerId = customerIdFromClient;
+            } else if (customerPhone) {
+                const [cust] = await conn.query("SELECT customer_id FROM customers WHERE phone = ?", [customerPhone]);
+                if (cust.length === 0) { 
+                    await conn.rollback(); 
+                    return res.status(404).json({ message: "Không tìm thấy khách hàng." }); 
+                }
+                customerId = cust[0].customer_id;
+            } else {
+                customerId = null;
             }
-            const customerId = cust[0].customer_id;
 
-            // 2. Xác minh và tính toán (Sử dụng giá từ DB/Logic FE)
+            // 2. Xác minh và tính toán
             let orderItems = [];
             for (const it of items) {
-                // Lấy giá base + add_price (giá bán thực tế tại thời điểm tạo đơn)
+                // ✅ FIXED: Dùng p.base_price
                 const [variantData] = await conn.query(
-                    `SELECT p.base_price, pv.additional_price, pv.stock_quantity FROM product_variants pv JOIN products p ON pv.product_id = p.product_id WHERE pv.variant_id = ?`, 
+                    `SELECT p.base_price, pv.additional_price, pv.stock_quantity 
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.product_id 
+                     WHERE pv.variant_id = ? FOR UPDATE`, // FOR UPDATE để khóa dòng tránh race condition
                     [it.variantId]
                 );
 
                 if (variantData.length === 0) { await conn.rollback(); return res.status(404).json({ message: `Không tìm thấy biến thể ${it.variantId}` }); }
                 if (variantData[0].stock_quantity < it.quantity) { await conn.rollback(); return res.status(400).json({ message: `Biến thể ${it.variantId} không đủ tồn kho.` }); }
 
-                // Tính toán giá bán thực tế (Backend xác minh)
+                // Tính toán giá bán thực tế
                 const priceAtOrder = parseFloat(variantData[0].base_price) + parseFloat(variantData[0].additional_price || 0);
-
-                // Nếu Frontend có gửi giá, dùng giá đó (để xử lý chiết khấu trên UI nếu có)
                 const finalPriceToRecord = it.priceAtOrder || priceAtOrder;
 
                 orderItems.push({ ...it, priceAtOrder: finalPriceToRecord, variantId: it.variantId });
             }
 
-            // 3. Đặt trạng thái ban đầu dựa trên kênh bán
+            // 3. Đặt trạng thái ban đầu
             let status = "Đang Xử Lý"; 
             let paymentStatus = "Chưa Thanh Toán"; 
             let completedDate = null;
             
             if (directDelivery) { 
-                // Đơn hàng trực tiếp tại cửa hàng
                 status = "Hoàn Thành"; 
                 paymentStatus = "Đã Thanh Toán"; 
                 completedDate = new Date(); 
@@ -98,18 +108,23 @@ const orderController = {
 
             // 4. INSERT vào orders
             await conn.query(
-                `INSERT INTO orders (order_id, customer_id, staff_id, order_date, subtotal, shipping_cost, final_total, status, order_channel, payment_method, payment_status, direct_delivery, completed_date)
-                 VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [orderId, customerId, employeeId, subtotal, shippingCost, finalTotal, status, orderChannel, paymentMethod, paymentStatus, directDelivery, completedDate]
+                `INSERT INTO orders (order_id, customer_id, staff_id, delivery_staff_id, order_date, subtotal, shipping_cost, final_total, status, order_channel, payment_method, payment_status, direct_delivery, completed_date)
+                 VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [orderId, customerId, employeeId, deliveryStaffId || null, subtotal, shippingCost, finalTotal, status, orderChannel, paymentMethod, paymentStatus, directDelivery, completedDate]
             );
 
-            // 5. INSERT vào order_details (Trigger sẽ tự động trừ tồn kho)
+            // 5. INSERT vào order_details VÀ TRỪ KHO (Thay thế Trigger)
             for (const it of orderItems) {
                 await conn.query(
                     `INSERT INTO order_details (order_id, variant_id, quantity, price_at_order) VALUES (?, ?, ?, ?)`, 
                     [orderId, it.variantId, it.quantity, it.priceAtOrder]
                 );
-                // KHÔNG TỰ UPDATE TỒN KHO: Trigger DB đã làm điều này!
+
+                // ✅ LOGIC MỚI: Trừ kho thủ công
+                await conn.query(
+                    `UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE variant_id = ?`,
+                    [it.quantity, it.variantId]
+                );
             }
             
             await conn.commit();
@@ -128,7 +143,6 @@ const orderController = {
     getOrderById: async (req, res) => {
         try {
             const { orderId } = req.params;
-            // Bổ sung lấy delivery_staff_id, customer_id, và địa chỉ khách hàng
             const [order] = await db.query(
                 `SELECT 
                     o.order_id AS id, 
@@ -137,7 +151,7 @@ const orderController = {
                     o.delivery_staff_id,
                     c.full_name AS customerName, 
                     c.phone, 
-                    c.address, /* Lấy địa chỉ khách hàng */
+                    c.address,
                     o.final_total AS totalAmount, 
                     o.subtotal, 
                     o.shipping_cost, 
@@ -146,12 +160,12 @@ const orderController = {
                     o.order_channel, 
                     o.payment_method, 
                     DATE_FORMAT(o.order_date, '%Y-%m-%d %H:%i:%s') AS orderDate, 
-                    es.full_name AS staffName, /* Nhân viên tạo đơn */
-                    ed.full_name AS deliveryStaffName /* Nhân viên giao hàng */
+                    es.full_name AS staffName,
+                    ed.full_name AS deliveryStaffName
                 FROM orders o 
                 LEFT JOIN customers c ON o.customer_id = c.customer_id 
-                LEFT JOIN employees es ON o.staff_id = es.user_id /* Alias es */
-                LEFT JOIN employees ed ON o.delivery_staff_id = ed.user_id /* Alias ed */
+                LEFT JOIN employees es ON o.staff_id = es.user_id
+                LEFT JOIN employees ed ON o.delivery_staff_id = ed.user_id
                 WHERE o.order_id = ?`, 
                 [orderId]
             );
@@ -166,7 +180,7 @@ const orderController = {
                     pv.size, 
                     od.quantity, 
                     od.price_at_order, 
-                    (od.quantity * od.price_at_order) AS itemTotal /* Đổi thành itemTotal cho Frontend */
+                    (od.quantity * od.price_at_order) AS itemTotal
                 FROM order_details od 
                 JOIN product_variants pv ON od.variant_id = pv.variant_id 
                 LEFT JOIN products p ON pv.product_id = p.product_id 
@@ -189,28 +203,41 @@ const orderController = {
             await conn.beginTransaction();
 
             const { orderId } = req.params;
-            // Frontend gửi items (variantId, quantity) và shippingCost
-            const { items, shippingCost, paymentMethod, deliveryStaffId } = req.body; 
+            const { items, shippingCost, paymentMethod, deliveryStaffId, status, paymentStatus } = req.body; 
             
             if (!items || items.length === 0) { await conn.rollback(); return res.status(400).json({ message: "Phải có ít nhất 1 sản phẩm." }); }
             
-            // 1. Xác minh giá và tính lại Subtotal/FinalTotal
+            // ✅ LOGIC MỚI: Lấy chi tiết cũ để hoàn kho trước khi xóa
+            const [oldDetails] = await conn.query("SELECT variant_id, quantity FROM order_details WHERE order_id = ?", [orderId]);
+            for (const oldIt of oldDetails) {
+                await conn.query('UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE variant_id = ?', [oldIt.quantity, oldIt.variant_id]);
+            }
+
+            // Xóa chi tiết cũ
+            await conn.query("DELETE FROM order_details WHERE order_id = ?", [orderId]);
+            
+            // Tính toán mới và chuẩn bị insert
             let subtotal = 0; 
             let newOrderDetails = [];
             
             for (const it of items) {
-                // Lấy giá base + add_price (giá bán thực tế tại thời điểm cập nhật)
-                const [variantPrice] = await conn.query(
-                    `SELECT p.base_price + pv.additional_price AS final_price, pv.stock_quantity 
+                // ✅ FIXED: Dùng p.base_price
+                const [variantData] = await conn.query(
+                    `SELECT (p.base_price + pv.additional_price) AS final_price, pv.stock_quantity 
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.product_id 
                      WHERE pv.variant_id = ?`, 
                     [it.variantId]
                 );
                 
-                if (variantPrice.length === 0) { await conn.rollback(); return res.status(404).json({ message: `Không tìm thấy biến thể ${it.variantId}` }); }
+                if (variantData.length === 0) { await conn.rollback(); return res.status(404).json({ message: `Không tìm thấy biến thể ${it.variantId}` }); }
                 
-                const price = parseFloat(variantPrice[0].final_price);
+                // Check tồn kho mới (lưu ý: kho đã được hoàn lại số cũ ở bước trên)
+                if (variantData[0].stock_quantity < it.quantity) {
+                    await conn.rollback(); return res.status(400).json({ message: `Sản phẩm ${it.variantId} không đủ tồn kho.` });
+                }
+
+                const price = parseFloat(variantData[0].final_price);
                 subtotal += price * it.quantity; 
                 newOrderDetails.push({ variantId: it.variantId, quantity: it.quantity, price });
             }
@@ -218,7 +245,7 @@ const orderController = {
             const shippingFee = Number(shippingCost || 0);
             const finalTotal = subtotal + shippingFee;
 
-            // 2. Cập nhật Orders: Cập nhật lại các trường tiền tệ và nhân viên giao hàng (nếu có)
+            // Cập nhật Orders Header
             const updateFields = {
                 subtotal: subtotal,
                 shipping_cost: shippingFee,
@@ -226,23 +253,24 @@ const orderController = {
             };
             if (paymentMethod) { updateFields.payment_method = paymentMethod; }
             if (deliveryStaffId !== undefined) { updateFields.delivery_staff_id = deliveryStaffId; }
+            if (status) { updateFields.status = status; }
+            if (paymentStatus) { updateFields.payment_status = paymentStatus; }
 
             const updateQuery = Object.keys(updateFields).map(key => `${key} = ?`).join(', ');
             const updateValues = [...Object.values(updateFields), orderId];
 
             await conn.query(`UPDATE orders SET ${updateQuery} WHERE order_id = ?`, updateValues);
 
-
-            // 3. Cập nhật chi tiết đơn hàng (Dùng Trigger để hoàn/trừ tồn kho)
-            
-            // Xóa chi tiết cũ (Trigger trg_order_details_delete sẽ hoàn tồn kho)
-            await conn.query("DELETE FROM order_details WHERE order_id = ?", [orderId]);
-            
-            // Thêm chi tiết mới (Trigger trg_order_details_add sẽ trừ tồn kho mới)
+            // Insert chi tiết mới VÀ TRỪ KHO (Thay thế Trigger)
             for (const it of newOrderDetails) {
                 await conn.query(
                     `INSERT INTO order_details (order_id, variant_id, quantity, price_at_order) VALUES (?, ?, ?, ?)`, 
                     [orderId, it.variantId, it.quantity, it.price]
+                );
+                // ✅ LOGIC MỚI: Trừ kho thủ công
+                await conn.query(
+                    `UPDATE product_variants SET stock_quantity = stock_quantity - ? WHERE variant_id = ?`,
+                    [it.quantity, it.variantId]
                 );
             }
 
@@ -259,7 +287,6 @@ const orderController = {
     },
     
     // 5. CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG (updateOrderStatus)
-    // Logic này vẫn giữ nguyên, Triggers trong DB đã đảm bảo hoàn tồn kho khi chuyển sang 'Đã Hủy'
     updateOrderStatus: async (req, res) => {
         const conn = await db.getConnection();
         try {
@@ -270,14 +297,21 @@ const orderController = {
 
             if (!status) { await conn.rollback(); return res.status(400).json({ message: "Phải cung cấp trạng thái mới." }); }
             
-            // Lấy trạng thái cũ để kiểm tra (không cần thiết nếu dùng trigger, nhưng giúp kiểm tra logic)
+            // Lấy trạng thái cũ
             const [oldOrderRows] = await conn.query('SELECT status FROM orders WHERE order_id = ?', [orderId]);
             if (oldOrderRows.length === 0) { await conn.rollback(); return res.status(404).json({ message: "Không tìm thấy đơn hàng." }); }
-            
-            // Trigger trg_order_cancel_return_stock trong DB sẽ xử lý TỰ ĐỘNG việc hoàn tồn kho khi status thay đổi thành 'Đã Hủy'
+            const oldStatus = oldOrderRows[0].status;
             
             const completedDate = (status === 'Hoàn Thành') ? new Date() : null;
             await conn.query("UPDATE orders SET status = ?, completed_date = ? WHERE order_id = ?", [status, completedDate, orderId]);
+
+            // ✅ LOGIC MỚI: Hoàn kho nếu Hủy đơn (Thay thế Trigger)
+            if (status === 'Đã Hủy' && oldStatus !== 'Đã Hủy') {
+                const [details] = await conn.query("SELECT variant_id, quantity FROM order_details WHERE order_id = ?", [orderId]);
+                for (const item of details) {
+                    await conn.query('UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE variant_id = ?', [item.quantity, item.variant_id]);
+                }
+            }
 
             await conn.commit();
             res.status(200).json({ message: "Cập nhật trạng thái đơn hàng thành công!", status });
@@ -305,7 +339,6 @@ const orderController = {
             await conn.query('UPDATE orders SET payment_status = ? WHERE order_id = ?', [paymentStatus, orderId]);
             
             if (paymentStatus === 'Đã Thanh Toán') {
-                // Nếu thanh toán hoàn thành, đảm bảo completed_date được set nếu chưa có
                 await conn.query('UPDATE orders SET completed_date = NOW() WHERE order_id = ? AND completed_date IS NULL', [orderId]);
             }
 
@@ -333,16 +366,14 @@ const orderController = {
             
             if (details.length === 0) { await conn.rollback(); return res.status(404).json({ message: "Không tìm thấy đơn hàng để xóa." }); }
 
-            // 1. Hoàn lại tồn kho thủ công (vì đang xóa cả Order và Order_details)
-            // Nếu bạn chỉ DELETE orders (ON DELETE CASCADE), bạn cần đảm bảo trigger trg_order_details_delete có thể hoạt động.
-            // Để an toàn, hoàn lại tồn kho trước khi xóa:
+            // 1. Hoàn lại tồn kho thủ công (Giữ nguyên logic cũ đã có)
             for (const item of details) {
                 await conn.query('UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE variant_id = ?', [item.quantity, item.variant_id]);
             }
 
             // 2. Xóa chi tiết và đơn hàng
-            await conn.query("DELETE FROM order_details WHERE order_id = ?", [orderId]); // Xóa chi tiết
-            await conn.query("DELETE FROM orders WHERE order_id = ?", [orderId]); // Xóa orders
+            await conn.query("DELETE FROM order_details WHERE order_id = ?", [orderId]); 
+            await conn.query("DELETE FROM orders WHERE order_id = ?", [orderId]); 
 
             await conn.commit();
             res.status(200).json({ message: "Xóa đơn hàng thành công và đã hoàn lại tồn kho!" });

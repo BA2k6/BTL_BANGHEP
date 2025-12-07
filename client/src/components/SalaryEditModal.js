@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { patchSalary } from '../services/api';
 
 const SalaryEditModal = ({ visible, onClose, salary, onSaved }) => {
-    const [form, setForm] = useState({ bonus: 0, deductions: 0, sales_commission: 0, base_salary: 0 });
+    const [form, setForm] = useState({ bonus: 0, deductions: 0, base_salary: 0 });
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -11,7 +11,6 @@ const SalaryEditModal = ({ visible, onClose, salary, onSaved }) => {
             setForm({
                 bonus: salary.bonus || 0,
                 deductions: salary.deductions || 0,
-                sales_commission: salary.sales_commission || 0,
                 base_salary: salary.base_salary || 0
             });
         }
@@ -32,8 +31,7 @@ const SalaryEditModal = ({ visible, onClose, salary, onSaved }) => {
         try {
             const payload = {
                 bonus: Number(form.bonus) || 0,
-                deductions: Number(form.deductions) || 0,
-                sales_commission: Number(form.sales_commission) || 0
+                deductions: Number(form.deductions) || 0
             };
             await patchSalary(salary.salary_id, payload);
             if (onSaved) onSaved();
@@ -58,11 +56,6 @@ const SalaryEditModal = ({ visible, onClose, salary, onSaved }) => {
                     <div>
                         <label className="block text-sm text-gray-700">Lương cơ bản</label>
                         <input type="number" name="base_salary" value={form.base_salary} onChange={handleChange} className="w-full mt-1 p-2 border rounded" readOnly />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm text-gray-700">Hoa hồng</label>
-                        <input type="number" name="sales_commission" value={form.sales_commission} onChange={handleChange} className="w-full mt-1 p-2 border rounded" />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
